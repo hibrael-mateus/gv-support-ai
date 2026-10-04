@@ -81,6 +81,9 @@ try:
 
         pg.keyboard.press("Control+,")
         pg.wait_for_selector("text=Banco vetorial")
+        pg.get_by_role("button", name="IA", exact=True).click()
+        pg.wait_for_selector("text=Baixar modelo")  # embedded AI is the default provider
+        pg.screenshot(path=OUT / "settings-ai.png")
         pg.locator("header button").last.click()  # dark theme
         pg.wait_for_timeout(500)
         pg.set_viewport_size({"width": 910, "height": 512})  # 1366x768 at 150% scaling

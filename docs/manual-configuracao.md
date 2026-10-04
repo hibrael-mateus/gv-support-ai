@@ -8,7 +8,8 @@ Configurações → **IA**.
 
 | Provedor | Quando usar | O que informar |
 |---|---|---|
-| Ollama (padrão) | Dados não saem do computador | Endereço (padrão `http://127.0.0.1:11434`), modelo de chat, `nomic-embed-text` |
+| IA embutida (padrão) | Nada a instalar; dados não saem do computador | Modelo: Qwen2.5 3B (recomendado), 7B ou 0.5B; ou um `.gguf` importado |
+| Ollama | Já usa Ollama instalado à parte | Endereço (padrão `http://127.0.0.1:11434`), modelo de chat, `nomic-embed-text` |
 | OpenAI compatível | Endpoint corporativo compatível com OpenAI | URL base, chave de API |
 | Gemini / Groq | Nuvem, se a política da empresa permitir | Chave de API |
 | Personalizado | Outro servidor compatível com OpenAI | URL base, chave |

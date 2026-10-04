@@ -1,13 +1,15 @@
-"""LLM providers. Local-first: Ollama is the default and nothing requires a paid API."""
+"""LLM providers. Embedded llama.cpp is the default: no install, no paid API, nothing leaves the computer."""
 from __future__ import annotations
 
 import json
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 import httpx
 
+from . import embedded
 from .settings import get_secret, load_config
 
 Message = dict[str, str]
@@ -240,11 +242,51 @@ class GeminiProvider(LLMProvider):
             return None
 
 
+class EmbeddedProvider(OpenAICompatibleProvider):
+    """The engine bundled with the app (see embedded.py); started on first use."""
+
+    name = "embedded"
+
+    def __init__(self, model_key: str = "", model_file: str = "", **kw):
+        super().__init__("", **kw)
+        self.model_key = model_key if model_key in embedded.MODELS else embedded.DEFAULT_MODEL
+        self.path = Path(model_file) if model_file else embedded.model_path(self.model_key)
+        self.model = self.path.name
+        self.embedding_model = ""  # lexical + metadata search; no second model to download
+
+    def _problem(self) -> str:
+        if not embedded.server_binary():
+            return "Motor de IA embutido não encontrado nesta instalação. Reinstale o GV Support AI."
+        if not embedded.is_gguf(self.path):
+            return "Modelo de IA ainda não baixado. Em Configurações > IA, clique em Baixar modelo."
+        return ""
+
+    def list_models(self) -> list[str]:
+        return [self.model] if not self._problem() else []
+
+    def status(self) -> dict[str, Any]:
+        problem = self._problem()
+        return {"online": not problem, "provider": self.name, "models": self.list_models(), "model": self.model,
+                "embedding_model": "", "model_key": self.model_key, "model_ready": embedded.is_gguf(self.path),
+                **({"error": problem} if problem else {})}
+
+    def chat(self, messages: list[Message], json_mode: bool = False) -> str:
+        if problem := self._problem():
+            raise LLMUnavailable(problem)
+        try:
+            self.base_url, self.api_key = embedded.ensure(self.path)
+        except RuntimeError as exc:
+            raise LLMUnavailable(str(exc)) from exc
+        return super().chat(messages, json_mode)
+
+
 def get_provider(cfg: dict[str, Any] | None = None) -> LLMProvider:
     cfg = cfg or load_config()
     kw = {"model": cfg.get("llm_model", ""), "embedding_model": cfg.get("embedding_model", ""),
           "temperature": float(cfg.get("temperature", 0.2))}
-    kind = cfg.get("llm_provider", "ollama")
+    kind = cfg.get("llm_provider", "embedded")
+    if kind == "embedded":
+        return EmbeddedProvider(cfg.get("embedded_model", ""), cfg.get("embedded_model_path", ""), **kw)
     if kind == "openai_compatible":
         return OpenAICompatibleProvider(cfg.get("openai_base_url", ""), get_secret("openai_api_key"), **kw)
     if kind == "gemini":

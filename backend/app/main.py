@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, cases, drive, internet, jobs, maintenance, rag
+from . import __version__, cases, drive, embedded, internet, jobs, maintenance, rag
 from .agents import ACTIONS, GVSupportOrchestrator
 from .agents.logs import analyze_log, summary_markdown
 from .agents.powershell import ALL_MODULES, MODULES, build_diagnostic
@@ -44,6 +44,7 @@ async def lifespan(_: FastAPI):
     threading.Thread(target=_auto_sync_loop, daemon=True, name="auto-sync").start()
     log.info("backend started v%s data=%s", __version__, DATA_DIR)
     yield
+    embedded.stop()
 
 
 app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)
@@ -270,6 +271,30 @@ def ai_test():
                 "embeddings": bool(emb), "model": getattr(p, "resolved_model", lambda: p.model)()}
     except LLMUnavailable as exc:
         return {"ok": False, "error": str(exc)}
+
+
+@app.get("/ai/embedded")
+def ai_embedded():
+    cfg = load_config()
+    return {"binary": bool(embedded.server_binary()), "selected": cfg.get("embedded_model"),
+            "custom_path": cfg.get("embedded_model_path", ""),
+            "models": [{"key": k, "label": m["label"], "downloaded": embedded.is_gguf(embedded.model_path(k))}
+                       for k, m in embedded.MODELS.items()]}
+
+
+@app.post("/ai/embedded/download")
+def ai_embedded_download(body: TextIn):
+    if body.text not in embedded.MODELS:
+        raise HTTPException(400, "Modelo desconhecido")
+    save_config({"llm_provider": "embedded", "embedded_model": body.text, "embedded_model_path": ""})
+    return jobs.start("model_download", lambda ctx: embedded.download(body.text, ctx))
+
+
+@app.post("/ai/embedded/import")
+def ai_embedded_import(body: PathIn):
+    if not body.path.lower().endswith(".gguf") or not embedded.is_gguf(Path(body.path)):
+        raise HTTPException(400, "Selecione um arquivo de modelo .gguf válido.")
+    return save_config({"llm_provider": "embedded", "embedded_model_path": body.path})
 
 
 # ---- Google Drive / sources ---------------------------------------------------

@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  LLAMA_TAG: b11385  # llama.cpp release bundled as the embedded AI engine
+
 jobs:
   backend-tests:
     runs-on: windows-latest
@@ -18,9 +21,24 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements-dev.txt }
       - run: pip install -r backend/requirements-dev.txt
-      - name: Backend tests (Drive restriction, RAG, citations, anti-hallucination, SQL, PowerShell, cases, update)
+      - uses: actions/cache@v4
+        with: { path: "${{ runner.temp }}/gvdata/Models", key: "gguf-qwen2.5-0.5b" }
+      - name: Embedded AI engine and test model (real Hugging Face download, SHA-256 checked)
+        shell: pwsh
         working-directory: backend
-        run: python -m pytest -q
+        run: |
+          Invoke-WebRequest "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_TAG/llama-$env:LLAMA_TAG-bin-win-cpu-x64.zip" -OutFile llama.zip
+          Expand-Archive llama.zip "$env:RUNNER_TEMP\llama"
+          $env:GV_SUPPORT_DATA_DIR = "$env:RUNNER_TEMP\gvdata"
+          $model = python -c "from app import embedded; print(embedded.download('qwen2.5-0.5b'))"
+          if ($LASTEXITCODE) { throw "model download failed" }
+          python -c "import httpx; from app.embedded import MODELS; [print(k, httpx.head(m['url'], follow_redirects=True, timeout=60).raise_for_status().status_code) for k, m in MODELS.items()]"
+          if ($LASTEXITCODE) { throw "a catalog model URL is broken" }
+          "GV_LLAMA_SERVER=$((Get-ChildItem "$env:RUNNER_TEMP\llama" -Recurse -Filter llama-server.exe)[0].FullName)" >> $env:GITHUB_ENV
+          "GV_TEST_MODEL=$model" >> $env:GITHUB_ENV
+      - name: Backend tests (Drive restriction, RAG, citations, anti-hallucination, SQL, PowerShell, cases, embedded AI)
+        working-directory: backend
+        run: python -m pytest -q -rs
       - name: Generated PowerShell scripts parse without errors
         shell: pwsh
         run: |
@@ -69,16 +87,39 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           pyinstaller gv-support-backend.spec --noconfirm
-      - name: Frozen backend answers /health
+      - name: Bundle the embedded AI engine (llama.cpp CPU build)
+        shell: pwsh
+        working-directory: backend
+        run: |
+          Invoke-WebRequest "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_TAG/llama-$env:LLAMA_TAG-bin-win-cpu-x64.zip" -OutFile llama.zip
+          Expand-Archive llama.zip llama-x
+          $bin = (Get-ChildItem llama-x -Recurse -Filter llama-server.exe)[0].Directory
+          New-Item -ItemType Directory dist/gv-support-backend/llama | Out-Null
+          Copy-Item "$($bin.FullName)\*" dist/gv-support-backend/llama/ -Recurse
+      - uses: actions/cache@v4
+        with: { path: "${{ runner.temp }}/gvdata/Models", key: "gguf-qwen2.5-0.5b" }
+      - name: Frozen backend answers /health and the embedded AI answers a question
         shell: pwsh
         working-directory: backend/dist/gv-support-backend
         run: |
           $env:GV_PORT = "8799"; $env:GV_SUPPORT_DATA_DIR = "$env:RUNNER_TEMP\gvdata"
+          New-Item -ItemType Directory -Force "$env:GV_SUPPORT_DATA_DIR\Models" | Out-Null
+          '{"llm_provider": "embedded", "embedded_model": "qwen2.5-0.5b"}' | Set-Content "$env:GV_SUPPORT_DATA_DIR\config.json"
           $p = Start-Process .\gv-support-backend.exe -PassThru
           $ok = $false
           foreach ($i in 1..60) { try { Invoke-RestMethod http://127.0.0.1:8799/health | Out-Null; $ok = $true; break } catch { Start-Sleep 1 } }
+          if (-not $ok) { Stop-Process $p -Force; throw "backend executable did not start" }
+          $job = Invoke-RestMethod -Method Post -ContentType application/json -Body '{"text": "qwen2.5-0.5b"}' http://127.0.0.1:8799/ai/embedded/download
+          foreach ($i in 1..600) { $job = Invoke-RestMethod "http://127.0.0.1:8799/jobs/$($job.id)"; if ($job.state -ne "running") { break }; Start-Sleep 1 }
+          if ($job.state -ne "done") { Stop-Process $p -Force; throw "model download: $($job.error)" }
+          $t = Invoke-RestMethod -Method Post http://127.0.0.1:8799/ai/test -TimeoutSec 600
+          Write-Host "AI test: $($t | ConvertTo-Json -Compress)"
+          $engine = Get-Process llama-server -ErrorAction SilentlyContinue
           Stop-Process $p -Force
-          if (-not $ok) { throw "backend executable did not start" }
+          if (-not $t.ok) { throw "embedded AI did not answer: $($t.error)" }
+          if (-not $engine) { throw "llama-server was not running" }
+          Start-Sleep 3
+          if (Get-Process llama-server -ErrorAction SilentlyContinue) { throw "llama-server survived the backend being killed" }
 
       - name: Desktop app and installers (NSIS + MSI)
         working-directory: desktop
@@ -104,6 +145,7 @@ jobs:
           $exe = Join-Path $dir "GV Support AI.exe"
           if (-not (Test-Path $exe)) { Get-ChildItem $dir -Recurse | Select-Object -First 40 FullName; throw "app not installed in $dir" }
           if (-not (Test-Path (Join-Path $dir "backend\gv-support-backend.exe"))) { throw "backend not bundled" }
+          if (-not (Test-Path (Join-Path $dir "backend\llama\llama-server.exe"))) { throw "embedded AI engine not bundled" }
           $lnk = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "GV Support AI*.lnk"
           if (-not $lnk) { throw "Start Menu shortcut missing" }
           $app = Start-Process $exe -PassThru

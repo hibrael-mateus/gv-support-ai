@@ -98,6 +98,8 @@ export type Job = {
 export type Settings = Record<string, unknown> & {
   theme: "light" | "dark" | "system";
   llm_provider: string;
+  embedded_model: string;
+  embedded_model_path: string;
   ollama_url: string;
   llm_model: string;
   embedding_model: string;
@@ -153,6 +155,9 @@ export const api = {
   saveSettings: (changes: Partial<Settings>) => request<Settings>("/settings", json("PUT", changes)),
   saveSecret: (name: string, value: string) => request("/settings/secret", json("PUT", { name, value })),
   aiModels: () => request<{ provider: string; models: string[] }>("/ai/models"),
+  aiEmbedded: () => request<{ binary: boolean; selected: string; custom_path: string; models: { key: string; label: string; downloaded: boolean }[] }>("/ai/embedded"),
+  aiDownloadModel: (key: string) => request<Job>("/ai/embedded/download", json("POST", { text: key })),
+  aiImportModel: (path: string) => request<Settings>("/ai/embedded/import", json("POST", { path })),
   aiTest: () => request<{ ok: boolean; answer?: string; seconds?: number; embeddings?: boolean; model?: string; error?: string }>("/ai/test", json("POST")),
 
   driveStatus: () => request<SystemStatus["drive"]>("/drive/status"),

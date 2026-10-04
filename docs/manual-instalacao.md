@@ -4,7 +4,7 @@
 
 - Windows 10 ou 11, 64 bits, 8 GB de RAM (16 GB recomendados para IA local).
 - Microsoft Edge WebView2 (já incluso no Windows 10/11 atualizados; o instalador baixa se faltar).
-- Para IA local: [Ollama para Windows](https://ollama.com/download/windows).
+- 8 GB de RAM para o modelo recomendado (4 GB com o modelo leve). A IA já vem dentro do programa.
 - Acesso, com sua conta Google, à pasta do Drive “Fontes do Notebook LM”.
 
 ## Instalar
@@ -18,11 +18,9 @@ Instalação silenciosa (TI): `GVSupportAI-Setup.exe /S` ou `msiexec /i GVSuppor
 
 ## IA local (recomendado)
 
-```powershell
-# depois de instalar o Ollama
-ollama pull llama3.1:8b          # ou outro modelo de chat
-ollama pull nomic-embed-text     # embeddings para a busca semântica
-```
+Na primeira execução, em **Configurações → IA**, clique em **Baixar modelo** (cerca de 2 GB, uma única vez,
+conferido por assinatura SHA-256). Sem internet liberada para huggingface.co, use **Importar arquivo .gguf**
+com o modelo copiado de outra máquina ou de uma pasta da rede.
 
 ## Atualizar
 
@@ -40,5 +38,5 @@ Para remover o login do Google e as chaves de API: Gerenciador de Credenciais �
 | Sintoma | Solução |
 |---|---|
 | “Não foi possível iniciar o serviço interno” | Feche e abra novamente; veja `%LOCALAPPDATA%\GVSupportAI\Logs\backend.log`. Antivírus pode estar bloqueando `gv-support-backend.exe`. |
-| IA offline | Abra o Ollama (ícone na bandeja) e use **Testar IA** em Configurações → IA. |
+| IA offline | Em Configurações → IA, confira se o modelo foi baixado e use **Testar IA**. Se fechar ao carregar, escolha o modelo leve (pouca RAM). Detalhes em `Logs\ia-embutida.log`. |
 | Login do Google não abre | Verifique se o navegador padrão está configurado; tente **Reconectar**. |

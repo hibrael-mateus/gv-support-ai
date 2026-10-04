@@ -47,7 +47,7 @@ export default function Setup({ onDone }: { onDone: (s: Settings) => void }) {
     <List dense key="req">
       {check(!!status, "Serviço interno do GV Support AI", status ? `Versão ${status.version} em execução` : "Iniciando…")}
       {check(!!status?.data_dir, "Pasta de dados do usuário", status?.data_dir ?? "")}
-      {check(!!status?.ai.online, "Motor de IA", status?.ai.online ? `${status.ai.provider}: ${status.ai.models.length} modelo(s)` : status?.ai.error || "Ollama não encontrado. Instale ou escolha outro provedor no próximo passo.")}
+      {check(!!status?.ai.online, "Motor de IA", status?.ai.online ? status.ai.model : status?.ai.error || "Configure no próximo passo.")}
       {check(true, "Windows 10/11 x64", "Requisito do instalador")}
     </List>,
     settings && <AiSection key="ai" settings={settings} onSaved={setSettings} />,

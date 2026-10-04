@@ -10,7 +10,7 @@
 │  backend\gv-support-backend.exe  (PyInstaller onedir, sem console)          │
 │  FastAPI ─ Orquestrador ─ Agentes ─ RAG híbrido ─ SQLite (%LOCALAPPDATA%)   │
 └──────────────┬──────────────────────────────┬───────────────────────────────┘
-               │ Google Drive API (readonly)  │ Ollama local / provedor configurado
+               │ Google Drive API (readonly)  │ IA embutida (llama.cpp) / provedor
                ▼                              ▼
    Pasta "Fontes do Notebook LM"        LLM + embeddings
 ```
@@ -33,7 +33,8 @@
 | `extract.py` | Texto de PDF (por página), DOCX (com tabelas), XLSX (aba = página), ZIP, CSV e texto; metadados (produto, módulo, tipo) |
 | `rag.py` | Indexação e busca híbrida |
 | `drive.py` | OAuth (App para computador, escopo `drive.readonly`), varredura recursiva, sincronização incremental |
-| `llm.py` | `LLMProvider`: Ollama (padrão), OpenAI compatível, Gemini, Groq, Personalizado |
+| `llm.py` | `LLMProvider`: IA embutida (padrão), Ollama, OpenAI compatível, Gemini, Groq, Personalizado |
+| `embedded.py` | Motor `llama-server` (llama.cpp, CPU) incluído no instalador; baixa o modelo GGUF uma vez com verificação SHA-256, inicia sob demanda em porta local com chave aleatória e morre junto com o backend (Job Object) |
 | `agents/` | Orquestrador e agentes especialistas |
 | `cases.py` | Chamados, memória do caso, hipóteses, histórico, painel |
 | `internet.py` | Pesquisa auxiliar só no Microsoft Learn, bloqueando termos internos GV |
@@ -54,7 +55,7 @@
 ## RAG híbrido
 
 1. Extração por página → trechos de ~1200 caracteres com sobreposição de 200.
-2. Embeddings (`nomic-embed-text` no Ollama, `/api/embed`) guardados como `float32` no SQLite.
+2. Embeddings opcionais (provedores que os oferecem, ex. `nomic-embed-text` no Ollama) guardados como `float32` no SQLite.
 3. Busca: BM25 (FTS5, sem acentos) + similaridade de cosseno (numpy) + filtros de metadados,
    fundidos por Reciprocal Rank Fusion (k=60) e reranqueados por cobertura de termos, frase exata e produto.
    Relevância 0–100; abaixo de 30 o trecho não conta como evidência. Um resultado por arquivo e página.
