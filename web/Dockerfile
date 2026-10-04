@@ -1,5 +1,5 @@
 # GV Support AI website: the same backend and UI as the desktop app, served to browsers.
-# Built by Hugging Face Spaces (free CPU: 2 vCPU, 16 GB RAM) from the folder web/deploy_space.py uploads.
+# Built by Render (render.yaml at the repo root) or Hugging Face Spaces (web/deploy_space.py).
 FROM node:22-slim AS ui
 WORKDIR /ui
 COPY desktop/package.json desktop/package-lock.json ./
@@ -23,4 +23,5 @@ ENV GV_WEB_MODE=1 GV_WEB_DIR=/app/ui GV_LLAMA_SERVER=/app/llama/llama-server GV_
     GV_CONFIG_SETUP_COMPLETED=true GV_CONFIG_AUTO_SYNC_MINUTES=240 GV_CONFIG_ALLOW_LOCAL_EXECUTION=false PYTHONUNBUFFERED=1
 USER user
 EXPOSE 7860
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Render sets PORT; Hugging Face uses 7860.
+CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers --forwarded-allow-ips '*'"]

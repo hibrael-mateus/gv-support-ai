@@ -95,8 +95,24 @@ DATASET = os.getenv("GV_HF_DATASET", "")
 _DB_NAME = "gv_support_ai.db"
 
 
+def _dataset() -> str:
+    """GV_HF_DATASET, or <hf user>/gv-support-ai-data when only HF_TOKEN is set (created private on first use)."""
+    global DATASET
+    if not DATASET and os.getenv("HF_TOKEN"):
+        try:
+            from huggingface_hub import HfApi
+
+            api = HfApi(token=os.environ["HF_TOKEN"])
+            name = f"{api.whoami()['name']}/gv-support-ai-data"
+            api.create_repo(name, repo_type="dataset", private=True, exist_ok=True)
+            DATASET = name
+        except Exception as exc:
+            log.warning("persistence disabled: %s", type(exc).__name__)
+    return DATASET
+
+
 def restore_db() -> None:
-    if not DATASET or DB_PATH.exists():
+    if not _dataset() or DB_PATH.exists():
         return
     try:
         from huggingface_hub import hf_hub_download
@@ -125,7 +141,7 @@ def _signature() -> tuple:
 
 
 def start_snapshots(minutes: int = 10) -> None:
-    if not DATASET:
+    if not _dataset():
         return
 
     def loop():

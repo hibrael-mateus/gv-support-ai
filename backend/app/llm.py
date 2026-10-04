@@ -194,6 +194,13 @@ class CustomProvider(OpenAICompatibleProvider):
     secret_name = "custom_api_key"
 
 
+def pick_gemini_model(names: list[str]) -> str:
+    stable = [n for n in names if re.fullmatch(r"gemini-[\d.]+-flash", n)]
+    if stable:
+        return max(stable, key=lambda n: [int(x) for x in re.findall(r"\d+", n)])
+    return next((n for n in names if "flash" in n and not re.search(r"lite|image|tts|live|audio", n)), "gemini-flash-latest")
+
+
 class GeminiProvider(LLMProvider):
     name = "gemini"
     secret_name = "gemini_api_key"
@@ -217,6 +224,8 @@ class GeminiProvider(LLMProvider):
                 "embedding_model": self.embedding_model}
 
     def chat(self, messages: list[Message], json_mode: bool = False) -> str:
+        if not self.model:  # Google renames models often: default to the newest stable Flash (free tier)
+            self.model = pick_gemini_model(self.list_models())
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         contents = [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
                     for m in messages if m["role"] != "system"]

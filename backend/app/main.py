@@ -55,8 +55,11 @@ async def lifespan(_: FastAPI):
     log.info("backend started v%s data=%s web=%s", __version__, DATA_DIR, web.ENABLED)
     yield
     embedded.stop()
-    if web.DATASET:
-        web.snapshot_db()
+    if web.ENABLED and web.DATASET:
+        try:
+            web.snapshot_db()
+        except Exception as exc:  # shutting down: never block on the network
+            log.warning("final snapshot failed: %s", type(exc).__name__)
 
 
 app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)

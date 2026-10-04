@@ -52,3 +52,12 @@ def test_server_secrets_and_config_from_environment(monkeypatch):
     assert get_secret("groq_api_key") == "k"
     cfg = load_config()
     assert cfg["llm_provider"] == "groq" and cfg["auto_sync_minutes"] == 240
+
+
+def test_gemini_defaults_to_newest_stable_flash():
+    from app.llm import pick_gemini_model
+
+    names = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.0-flash-preview", "gemini-2.5-pro"]
+    assert pick_gemini_model(names) == "gemini-2.5-flash"
+    assert pick_gemini_model(["gemini-9-flash-preview", "gemini-9-flash-lite"]) == "gemini-9-flash-preview"
+    assert pick_gemini_model([]) == "gemini-flash-latest"

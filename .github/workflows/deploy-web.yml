@@ -1,9 +1,7 @@
 name: Deploy website (Hugging Face Spaces)
 
-# Turned on by the secrets HF_TOKEN and GV_WEB_PASSWORD (skips quietly without HF_TOKEN). See docs/site-web.md.
+# Manual only: Hugging Face now requires a PRO plan for Docker Spaces. The free site runs on Render (render.yaml).
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
