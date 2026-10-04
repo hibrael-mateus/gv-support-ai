@@ -81,6 +81,8 @@ _MASK_PATTERNS = [
     re.compile(r"\bsk-[A-Za-z0-9_\-]{16,}\b"),  # OpenAI-style keys
     re.compile(r"\bgsk_[A-Za-z0-9]{20,}\b"),  # Groq keys
     re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}\b"),  # Google API keys
+    re.compile(r"\bAQ\.[0-9A-Za-z_\-]{20,}"),  # Google AI Studio keys (newer format)
+    re.compile(r"(?<=[?&])(?:key|api_key|token|access_token|sig|signature)=[^&\s'\"]+"),  # secrets in URLs
     re.compile(r"\bya29\.[0-9A-Za-z_\-]+"),  # Google OAuth access tokens
 ]
 

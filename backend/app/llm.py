@@ -16,7 +16,12 @@ Message = dict[str, str]
 
 
 class LLMUnavailable(RuntimeError):
-    pass
+    """Its text reaches the UI and the logs, so it never carries keys (e.g. an API key in a failed URL)."""
+
+    def __init__(self, message: str = ""):
+        from .security import mask_secrets
+
+        super().__init__(mask_secrets(str(message)))
 
 
 class LLMProvider(ABC):
@@ -194,11 +199,18 @@ class CustomProvider(OpenAICompatibleProvider):
     secret_name = "custom_api_key"
 
 
+def gemini_candidates(names: list[str]) -> list[str]:
+    """Stable Flash models, newest first; then other Flash variants; then Google's moving alias."""
+    def version(n: str) -> list[int]:
+        return [int(x) for x in re.findall(r"\d+", n)]
+
+    stable = sorted((n for n in names if re.fullmatch(r"gemini-[\d.]+-flash", n)), key=version, reverse=True)
+    other = [n for n in names if "flash" in n and n not in stable and not re.search(r"lite|image|tts|live|audio", n)]
+    return (stable + other)[:3] + ["gemini-flash-latest"]
+
+
 def pick_gemini_model(names: list[str]) -> str:
-    stable = [n for n in names if re.fullmatch(r"gemini-[\d.]+-flash", n)]
-    if stable:
-        return max(stable, key=lambda n: [int(x) for x in re.findall(r"\d+", n)])
-    return next((n for n in names if "flash" in n and not re.search(r"lite|image|tts|live|audio", n)), "gemini-flash-latest")
+    return gemini_candidates(names)[0]
 
 
 class GeminiProvider(LLMProvider):
@@ -210,9 +222,12 @@ class GeminiProvider(LLMProvider):
         super().__init__(**kw)
         self.api_key = api_key
 
+    def _headers(self) -> dict[str, str]:
+        return {"x-goog-api-key": self.api_key}  # header, not ?key=: URLs end up in error messages
+
     def list_models(self) -> list[str]:
         try:
-            r = httpx.get(f"{self.base}/models", params={"key": self.api_key}, timeout=10)
+            r = httpx.get(f"{self.base}/models", headers=self._headers(), params={"pageSize": 1000}, timeout=10)
             r.raise_for_status()
             return [m["name"].removeprefix("models/") for m in r.json().get("models", [])]
         except Exception:
@@ -224,8 +239,6 @@ class GeminiProvider(LLMProvider):
                 "embedding_model": self.embedding_model}
 
     def chat(self, messages: list[Message], json_mode: bool = False) -> str:
-        if not self.model:  # Google renames models often: default to the newest stable Flash (free tier)
-            self.model = pick_gemini_model(self.list_models())
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         contents = [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
                     for m in messages if m["role"] != "system"]
@@ -234,21 +247,33 @@ class GeminiProvider(LLMProvider):
             body["systemInstruction"] = {"parts": [{"text": system}]}
         if json_mode:
             body["generationConfig"]["responseMimeType"] = "application/json"
-        try:
-            r = httpx.post(f"{self.base}/models/{self.model}:generateContent", params={"key": self.api_key},
-                           json=body, timeout=300)
-            r.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise LLMUnavailable(f"Gemini indisponível: {exc}") from exc
-        parts = r.json()["candidates"][0]["content"]["parts"]
-        return "".join(p.get("text", "") for p in parts)
+        # Google renames models often and the free tier is often overloaded (503/429):
+        # without a configured model, try the stable Flash models newest first.
+        models = [self.model] if self.model else gemini_candidates(self.list_models())
+        status = 0
+        for model in models:
+            try:
+                r = httpx.post(f"{self.base}/models/{model}:generateContent", headers=self._headers(),
+                               json=body, timeout=300)
+            except httpx.HTTPError as exc:
+                raise LLMUnavailable(f"Gemini indisponível ({type(exc).__name__}).") from exc
+            status = r.status_code
+            if status == 200:
+                self.model = model
+                parts = r.json()["candidates"][0]["content"].get("parts", [])
+                return "".join(p.get("text", "") for p in parts)
+            if status not in (404, 429, 500, 503):
+                break
+        hint = {400: "chave ou pedido inválido", 403: "chave sem permissão", 429: "limite gratuito atingido, tente mais tarde",
+                503: "serviço sobrecarregado, tente de novo em instantes"}.get(status, "erro do serviço")
+        raise LLMUnavailable(f"Gemini indisponível (HTTP {status}: {hint}).")
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:
         if not self.embedding_model:
             return None
         model = f"models/{self.embedding_model}"
         try:
-            r = httpx.post(f"{self.base}/{model}:batchEmbedContents", params={"key": self.api_key},
+            r = httpx.post(f"{self.base}/{model}:batchEmbedContents", headers=self._headers(),
                            json={"requests": [{"model": model, "content": {"parts": [{"text": t}]}} for t in texts]},
                            timeout=300)
             r.raise_for_status()

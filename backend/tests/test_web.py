@@ -55,9 +55,40 @@ def test_server_secrets_and_config_from_environment(monkeypatch):
 
 
 def test_gemini_defaults_to_newest_stable_flash():
-    from app.llm import pick_gemini_model
+    from app.llm import gemini_candidates, pick_gemini_model
 
     names = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.0-flash-preview", "gemini-2.5-pro"]
     assert pick_gemini_model(names) == "gemini-2.5-flash"
-    assert pick_gemini_model(["gemini-9-flash-preview", "gemini-9-flash-lite"]) == "gemini-9-flash-preview"
+    assert gemini_candidates(names) == ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.0-flash-preview",
+                                        "gemini-flash-latest"]
     assert pick_gemini_model([]) == "gemini-flash-latest"
+
+
+def test_gemini_falls_back_when_overloaded_and_never_leaks_the_key(monkeypatch):
+    import httpx
+
+    from app.llm import GeminiProvider, LLMUnavailable
+
+    key = "AQ.Ab8RN6Jc2HLF9eHCHhvjDS6eUrW-Ic3RT4F"
+    calls = []
+
+    def post(url, headers=None, **_):
+        calls.append(url)
+        assert key not in url and headers["x-goog-api-key"] == key
+        if "2.5" in url:
+            return httpx.Response(503, request=httpx.Request("POST", url))
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    p = GeminiProvider(key)
+    monkeypatch.setattr(p, "list_models", lambda: ["gemini-2.5-flash", "gemini-2.0-flash"])
+    monkeypatch.setattr(httpx, "post", post)
+    assert p.chat([{"role": "user", "content": "oi"}]) == "ok" and len(calls) == 2
+
+    monkeypatch.setattr(httpx, "post", lambda url, **_: httpx.Response(503, request=httpx.Request("POST", url)))
+    p.model = ""
+    try:
+        p.chat([{"role": "user", "content": "oi"}])
+        raise AssertionError("expected LLMUnavailable")
+    except LLMUnavailable as exc:
+        assert "503" in str(exc) and key not in str(exc)
+    assert key not in str(LLMUnavailable(f"error for url 'https://x/y?key={key}&a=1'"))
