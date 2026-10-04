@@ -54,6 +54,9 @@ try:
         browser = p.chromium.launch(executable_path=os.getenv("PLAYWRIGHT_CHROMIUM") or None)
         pg = browser.new_page(viewport={"width": 1366, "height": 768})
         pg.on("pageerror", lambda e: errors.append(str(e)))
+        console: list[str] = []
+        pg.on("console", lambda m: console.append(f"{m.type}: {m.text}"))
+        pg.on("response", lambda r: "/investigate" in r.url and console.append(f"HTTP {r.status} {r.url}"))
         pg.goto("http://127.0.0.1:8765")
         pg.wait_for_selector("text=Visão geral", timeout=20000)
         pg.screenshot(path=OUT / "dashboard.png")
@@ -67,7 +70,7 @@ try:
         try:
             pg.get_by_role("button", name="Gerar PowerShell").click(timeout=120000)  # enabled once the investigation ends
         except Exception:
-            print("PAGE TEXT:\n" + pg.inner_text("body")[-3000:])  # CI artifacts are not always reachable
+            print("PAGE ERRORS:", errors, "\nCONSOLE:", console[-20:], "\nHTML:", pg.content()[-3000:])  # CI artifacts are not always reachable
             log = Path(os.environ["GV_SUPPORT_DATA_DIR"]) / "Logs" / "backend.log"
             print("BACKEND LOG:\n" + (log.read_text(encoding="utf-8")[-4000:] if log.exists() else "(none)"))
             raise
