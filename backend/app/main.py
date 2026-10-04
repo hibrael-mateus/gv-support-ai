@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, cases, drive, embedded, internet, jobs, maintenance, rag
+from . import __version__, cases, drive, embedded, internet, jobs, maintenance, rag, web
 from .agents import ACTIONS, GVSupportOrchestrator
 from .agents.logs import analyze_log, summary_markdown
 from .agents.powershell import ALL_MODULES, MODULES, build_diagnostic
@@ -40,11 +40,23 @@ SECRET_NAMES = {"openai_api_key", "gemini_api_key", "groq_api_key", "custom_api_
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if web.ENABLED:
+        web.restore_db()
     init_db()
     threading.Thread(target=_auto_sync_loop, daemon=True, name="auto-sync").start()
-    log.info("backend started v%s data=%s", __version__, DATA_DIR)
+    if web.ENABLED:
+        web.start_snapshots()
+        cfg = load_config()
+        if drive.status()["connected"] and not rag.stats()["chunks"]:
+            _start_sync(False)  # fresh server: build the index right away
+        if cfg.get("llm_provider") == "embedded" and cfg.get("embedded_model") in embedded.MODELS \
+                and not embedded.is_gguf(embedded.model_path(cfg["embedded_model"])):
+            jobs.start("model_download", lambda ctx: embedded.download(cfg["embedded_model"], ctx))
+    log.info("backend started v%s data=%s web=%s", __version__, DATA_DIR, web.ENABLED)
     yield
     embedded.stop()
+    if web.DATASET:
+        web.snapshot_db()
 
 
 app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)
@@ -58,6 +70,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def require_token(request: Request, call_next):
+    if web.ENABLED:
+        return await web.guard(request, call_next)
     # The desktop shell generates a random token per launch; other local processes can't use the API.
     if API_TOKEN and request.method != "OPTIONS" and request.url.path != "/health":
         if request.headers.get("x-gv-token") != API_TOKEN:
@@ -233,9 +247,19 @@ def status():
     }
 
 
+class LoginIn(BaseModel):
+    password: str
+
+
+@app.post("/auth/login")
+def auth_login(body: LoginIn, request: Request):
+    return web.login(request, body.password)
+
+
 @app.get("/settings")
 def get_settings():
     cfg = load_config()
+    cfg["web"] = web.ENABLED
     cfg["secrets"] = {n: bool(get_secret(n)) for n in SECRET_NAMES}
     cfg["allowed_folder_id"] = ALLOWED_GOOGLE_DRIVE_FOLDER_ID
     return cfg
@@ -624,3 +648,10 @@ def updates_check():
 @app.get("/logs/path")
 def logs_path():
     return {"path": str(LOG_DIR)}
+
+
+# Website mode: the built UI is served by this same app (registered last so API routes win).
+if web.WEB_DIR:
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=web.WEB_DIR, html=True), name="ui")

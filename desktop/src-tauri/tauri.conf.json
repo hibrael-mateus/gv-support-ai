@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "GV Support AI",
   "mainBinaryName": "GV Support AI",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "identifier": "br.com.gvdasa.gvsupportai",
   "build": {
     "frontendDist": "../dist",

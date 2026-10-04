@@ -1,0 +1,30 @@
+name: Deploy website (Hugging Face Spaces)
+
+# Turned on by the repository variable HF_SPACE (e.g. hibrael-mateus/gv-support-ai) plus the secrets
+# HF_TOKEN and GV_WEB_PASSWORD. See docs/site-web.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.HF_SPACE != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r backend/requirements-web.txt
+      - name: Publish Space (code, secrets, settings)
+        env:
+          HF_SPACE: ${{ vars.HF_SPACE }}
+          AI_MODE: ${{ vars.AI_MODE }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          EMBEDDED_MODEL: ${{ vars.EMBEDDED_MODEL }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GV_WEB_PASSWORD: ${{ secrets.GV_WEB_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          GOOGLE_OAUTH_TOKEN: ${{ secrets.GOOGLE_OAUTH_TOKEN }}
+        run: python web/deploy_space.py

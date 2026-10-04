@@ -6,7 +6,11 @@ export async function backendInfo(): Promise<{ url: string; token: string }> {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke("backend_info");
   }
-  return { url: import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8765", token: "" };
+  // Website: same origin, token from the team login. Dev server: local backend.
+  const url = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8765" : "");
+  let token = "";
+  try { token = sessionStorage.getItem("gv_token") ?? ""; } catch { /* storage blocked */ }
+  return { url, token };
 }
 
 export async function saveTextFile(defaultName: string, content: string, ext: string): Promise<string | null> {

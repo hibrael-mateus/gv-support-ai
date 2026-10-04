@@ -20,6 +20,7 @@ from .settings import ALLOWED_GOOGLE_DRIVE_FOLDER_ID, get_secret, load_config, s
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 TOKEN_SECRET = "google_oauth_token"
+SERVICE_ACCOUNT_SECRET = "google_service_account"  # website servers: key JSON of an account the folder is shared with
 FOLDER_MIME = "application/vnd.google-apps.folder"
 SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
 EXPORTS = {
@@ -51,6 +52,10 @@ def disconnect() -> None:
 
 
 def _credentials():
+    if sa := get_secret(SERVICE_ACCOUNT_SECRET):
+        from google.oauth2 import service_account
+
+        return service_account.Credentials.from_service_account_info(json.loads(sa), scopes=SCOPES)
     raw = get_secret(TOKEN_SECRET)
     if not raw:
         raise DriveNotConfigured("Google Drive não conectado. Use Configurações > Google Drive.")
@@ -136,7 +141,7 @@ class GoogleDriveGateway:
 
 
 def status() -> dict[str, Any]:
-    connected = bool(get_secret(TOKEN_SECRET))
+    connected = bool(get_secret(TOKEN_SECRET) or get_secret(SERVICE_ACCOUNT_SECRET))
     return {"connected": connected, "allowed_folder_id": ALLOWED_GOOGLE_DRIVE_FOLDER_ID,
             "client_secret_configured": bool(load_config().get("google_client_secret_path"))}
 

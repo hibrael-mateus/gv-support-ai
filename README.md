@@ -5,6 +5,8 @@ abre o chamado, consulta as fontes oficiais, levanta hipóteses, gera scripts SQ
 analisa logs e prepara a resposta ao cliente ou o escalonamento N3. Não é um chatbot genérico: toda
 afirmação sobre produtos GV Dasa precisa vir de uma fonte da pasta autorizada, citada com trecho e página.
 
+Também roda como **site**, sem instalar nada nos computadores: veja [docs/site-web.md](docs/site-web.md).
+
 | Instalador | Onde |
 |---|---|
 | `GVSupportAI-Setup.exe` (recomendado) | Releases do GitHub ou artefato do workflow *Build Windows installer* |

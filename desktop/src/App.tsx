@@ -15,7 +15,7 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
-import { api, waitForBackend, type Case, type Settings as SettingsT } from "./api";
+import { ApiError, api, setWebToken, waitForBackend, type Case, type Settings as SettingsT } from "./api";
 import { buildTheme } from "./theme";
 import Dashboard from "./pages/Dashboard";
 import NewCase from "./pages/NewCase";
@@ -44,7 +44,7 @@ const SIDENAV = 232;
 
 export default function App() {
   const prefersDark = useMediaQuery("(prefers-color-scheme: dark)");
-  const [ready, setReady] = useState<"wait" | "ok" | "fail">("wait");
+  const [ready, setReady] = useState<"wait" | "ok" | "fail" | "login">("wait");
   const [settings, setSettings] = useState<SettingsT | null>(null);
   const [route, setRoute] = useState<Route>({ page: "dashboard" });
   const [palette, setPalette] = useState(false);
@@ -57,9 +57,14 @@ export default function App() {
   const boot = useCallback(async () => {
     setReady("wait");
     if (!(await waitForBackend())) return setReady("fail");
-    try { setSettings(await api.settings()); setReady("ok"); } catch { setReady("fail"); }
+    try { setSettings(await api.settings()); setReady("ok"); } catch (e) { setReady(e instanceof ApiError && e.status === 401 ? "login" : "fail"); }
   }, []);
   useEffect(() => { boot(); }, [boot]);
+  useEffect(() => {
+    const onLogin = () => setReady("login");
+    window.addEventListener("gv:login", onLogin);
+    return () => window.removeEventListener("gv:login", onLogin);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -81,7 +86,9 @@ export default function App() {
   const saveTheme = async (theme: SettingsT["theme"]) => setSettings({ ...settings!, ...(await api.saveSettings({ theme })) });
 
   let content;
-  if (ready !== "ok" || !settings) {
+  if (ready === "login") {
+    content = <Login onDone={boot} />;
+  } else if (ready !== "ok" || !settings) {
     content = (
       <Stack sx={{ height: "100vh", alignItems: "center", justifyContent: "center", gap: 2 }}>
         {ready === "wait" ? <><CircularProgress /><Typography>Iniciando o GV Support AI…</Typography></> : (
@@ -204,5 +211,25 @@ function CommandPalette({ open, onClose, go }: { open: boolean; onClose: () => v
         </List>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Website only: the team password set by the server administrator. */
+function Login({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try { setWebToken((await api.login(password)).token); onDone(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); setBusy(false); }
+  };
+  return (
+    <Stack component="form" onSubmit={submit} sx={{ height: "100vh", alignItems: "center", justifyContent: "center", gap: 2, px: 2 }}>
+      <Typography variant="h5" component="h1">GV Support AI</Typography>
+      <TextField type="password" label="Senha da equipe" autoFocus value={password} onChange={(e) => setPassword(e.target.value)}
+        error={!!error} helperText={error || " "} sx={{ width: "100%", maxWidth: 320 }} autoComplete="current-password" />
+      <Button type="submit" variant="contained" loading={busy} disabled={!password}>Entrar</Button>
+    </Stack>
   );
 }

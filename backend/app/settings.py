@@ -62,6 +62,14 @@ def load_config() -> dict[str, Any]:
             data.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             pass
+    # Server deployments are configured by environment: GV_CONFIG_LLM_PROVIDER=groq, GV_CONFIG_AUTO_SYNC_MINUTES=240...
+    for key in DEFAULTS:
+        raw = os.getenv(f"GV_CONFIG_{key.upper()}")
+        if raw is not None:
+            try:
+                data[key] = json.loads(raw)
+            except ValueError:
+                data[key] = raw
     return data
 
 
@@ -104,10 +112,13 @@ def set_secret(name: str, value: str) -> None:
 
 
 def get_secret(name: str) -> str:
+    """OS credential store first; servers without one pass secrets as GV_SECRET_<NAME> environment variables."""
     kr = _keyring()
     if kr is None:
-        return _memory_secrets.get(name, "")
-    try:
-        return kr.get_password(SECRET_SERVICE, name) or ""
-    except Exception:
-        return ""
+        value = _memory_secrets.get(name, "")
+    else:
+        try:
+            value = kr.get_password(SECRET_SERVICE, name) or ""
+        except Exception:
+            value = ""
+    return value or os.getenv(f"GV_SECRET_{name.upper()}", "")

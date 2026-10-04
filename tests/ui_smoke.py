@@ -42,21 +42,19 @@ def wait(url: str, seconds: int = 40) -> None:
     raise SystemExit(f"timeout waiting for {url}")
 
 
-procs = [
-    subprocess.Popen([sys.executable, "run_backend.py"], cwd=ROOT / "backend"),
-    subprocess.Popen(["node", "node_modules/vite/bin/vite.js", "preview", "--port", "5173", "--strictPort"], cwd=ROOT / "desktop"),
-]
+# The backend serves the built UI itself (same origin, as on the website).
+procs = [subprocess.Popen([sys.executable, "run_backend.py"], cwd=ROOT / "backend",
+                          env={**os.environ, "GV_WEB_DIR": str(ROOT / "desktop" / "dist")})]
 errors: list[str] = []
 try:
     wait("http://127.0.0.1:8765/health")
-    wait("http://127.0.0.1:5173")
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=os.getenv("PLAYWRIGHT_CHROMIUM") or None)
         pg = browser.new_page(viewport={"width": 1366, "height": 768})
         pg.on("pageerror", lambda e: errors.append(str(e)))
-        pg.goto("http://127.0.0.1:5173")
+        pg.goto("http://127.0.0.1:8765")
         pg.wait_for_selector("text=Visão geral", timeout=20000)
         pg.screenshot(path=OUT / "dashboard.png")
 

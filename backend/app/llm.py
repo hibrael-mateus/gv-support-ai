@@ -180,6 +180,12 @@ class GroqProvider(OpenAICompatibleProvider):
         super().__init__("https://api.groq.com/openai/v1", api_key, **kw)
         self.embedding_model = ""  # Groq has no embeddings endpoint
 
+    def chat(self, messages: list[Message], json_mode: bool = False) -> str:
+        if not self.model:  # Groq retires models often: default to its largest current chat model
+            chat = [m for m in self.list_models() if not re.search(r"whisper|guard|tts|embed|orpheus", m)]
+            self.model = next((m for m in chat if "70b" in m), chat[0] if chat else "")
+        return super().chat(messages, json_mode)
+
 
 class CustomProvider(OpenAICompatibleProvider):
     """Any OpenAI-compatible server (LM Studio, vLLM, LocalAI, servidor interno)."""

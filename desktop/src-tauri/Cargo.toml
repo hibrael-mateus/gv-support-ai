@@ -1,6 +1,6 @@
 [package]
 name = "gv-support-ai"
-version = "1.1.0"
+version = "1.2.0"
 description = "GV Support AI - investigação técnica assistida por IA para o suporte GV Dasa"
 authors = ["GV Dasa Suporte"]
 license = "Proprietary"

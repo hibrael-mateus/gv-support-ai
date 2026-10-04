@@ -48,7 +48,8 @@ export default function Settings({ go, onSettings }: { go: Nav; onSettings: (s: 
     api.settings().then(setS).catch((e) => notify(errorText(e), "error"));
     api.status().then(setStatus).catch(() => {});
   };
-  useEffect(() => { reload(); api.logsPath().then((r) => setLogs(r.path)).catch(() => {}); }, []);
+  useEffect(() => { reload(); }, []);
+  useEffect(() => { if (s && !s.web) api.logsPath().then((r) => setLogs(r.path)).catch(() => {}); }, [s?.web]);
 
   const save = async (changes: Partial<SettingsT>) => {
     try {
@@ -91,8 +92,12 @@ export default function Settings({ go, onSettings }: { go: Nav; onSettings: (s: 
         </ToggleButtonGroup>
       </Stack>
     ),
-    IA: <AiSection settings={s} onSaved={(n) => { setS(n); onSettings(n); reload(); }} />,
-    "Google Drive": <DriveSection status={status?.drive ?? null} onChange={reload} />,
+    IA: s.web
+      ? <Alert severity="info">IA do servidor: <strong>{status?.ai.model || status?.ai.provider}</strong> ({status?.ai.online ? "online" : status?.ai.error || "offline"}). Configurada pelo administrador do site.</Alert>
+      : <AiSection settings={s} onSaved={(n) => { setS(n); onSettings(n); reload(); }} />,
+    "Google Drive": s.web
+      ? <Alert severity={status?.drive.connected ? "success" : "warning"}>Google Drive do servidor {status?.drive.connected ? "conectado" : "não conectado"}. Somente a pasta autorizada é indexada.</Alert>
+      : <DriveSection status={status?.drive ?? null} onChange={reload} />,
     Fontes: (
       <Stack spacing={2}>
         <TextField type="number" label="Tamanho do trecho (caracteres)" value={s.chunk_size} onChange={(e) => setS({ ...s, chunk_size: Number(e.target.value) })}
@@ -113,7 +118,9 @@ export default function Settings({ go, onSettings }: { go: Nav; onSettings: (s: 
         <Alert severity="info">Usada somente para tecnologias externas (Windows, SQL Server, IIS, .NET) no Microsoft Learn. Tabelas, colunas, procedures e regras GV Dasa nunca são pesquisadas na internet.</Alert>
       </Stack>
     ),
-    Privacidade: (
+    Privacidade: s.web ? (
+      <Typography variant="body2">Na versão web, scripts nunca são executados pelo servidor. Copie o script e rode no ambiente do cliente. As chaves e o acesso ao Drive ficam só nos segredos do servidor.</Typography>
+    ) : (
       <Stack spacing={2}>
         <FormControlLabel control={<Switch checked={s.allow_local_execution} onChange={(e) => save({ allow_local_execution: e.target.checked })} />}
           label="Permitir executar scripts de diagnóstico neste computador" />
@@ -140,9 +147,9 @@ export default function Settings({ go, onSettings }: { go: Nav; onSettings: (s: 
       <Stack spacing={1.5}>
         <StatusPanel status={status} />
         <Typography variant="body2">Dados: {status?.data_dir}</Typography>
-        <Typography variant="body2">Logs: {logs}</Typography>
+        {!s.web && <Typography variant="body2">Logs: {logs}</Typography>}
         <Stack direction="row" spacing={1}>
-          <Button variant="outlined" onClick={() => revealPath(logs)}>Abrir pasta de logs</Button>
+          {!s.web && <Button variant="outlined" onClick={() => revealPath(logs)}>Abrir pasta de logs</Button>}
           <Button onClick={reload}>Atualizar status</Button>
         </Stack>
       </Stack>

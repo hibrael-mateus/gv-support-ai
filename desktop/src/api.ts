@@ -1,4 +1,4 @@
-import { backendInfo } from "./native";
+import { backendInfo, isTauri } from "./native";
 
 export type Script = {
   language: "sql" | "powershell";
@@ -100,6 +100,7 @@ export type Settings = Record<string, unknown> & {
   llm_provider: string;
   embedded_model: string;
   embedded_model_path: string;
+  web?: boolean;
   ollama_url: string;
   llm_model: string;
   embedding_model: string;
@@ -119,6 +120,14 @@ export type Settings = Record<string, unknown> & {
 
 let base: Promise<{ url: string; token: string }> | null = null;
 const info = () => (base ??= backendInfo());
+let webMode = false;
+
+/** Website login: keep the token for this browser tab only. */
+export function setWebToken(token: string) {
+  try { sessionStorage.setItem("gv_token", token); } catch { /* storage blocked */ }
+  base = null;
+}
+const localTheme = () => { try { return localStorage.getItem("gv_theme") as Settings["theme"] | null; } catch { return null; } };
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -132,6 +141,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   const res = await fetch(`${url}${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string>) } });
   if (!res.ok) {
+    if (res.status === 401 && !isTauri) window.dispatchEvent(new Event("gv:login"));
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
@@ -151,8 +161,21 @@ const q = (params: Record<string, string | number | boolean | undefined>) =>
 export const api = {
   health: () => request<{ version: string }>("/health"),
   status: () => request<SystemStatus>("/status"),
-  settings: () => request<Settings>("/settings"),
-  saveSettings: (changes: Partial<Settings>) => request<Settings>("/settings", json("PUT", changes)),
+  settings: async () => {
+    const s = await request<Settings>("/settings");
+    webMode = !!s.web;
+    if (webMode) s.theme = localTheme() ?? s.theme;
+    return s;
+  },
+  saveSettings: async (changes: Partial<Settings>) => {
+    // On the website the theme is each analyst's own; everything else is set by the server administrator.
+    if (webMode && Object.keys(changes).every((k) => k === "theme")) {
+      try { localStorage.setItem("gv_theme", String(changes.theme)); } catch { /* storage blocked */ }
+      return changes as Settings;
+    }
+    return request<Settings>("/settings", json("PUT", changes));
+  },
+  login: (password: string) => request<{ token: string }>("/auth/login", json("POST", { password })),
   saveSecret: (name: string, value: string) => request("/settings/secret", json("PUT", { name, value })),
   aiModels: () => request<{ provider: string; models: string[] }>("/ai/models"),
   aiEmbedded: () => request<{ binary: boolean; selected: string; custom_path: string; models: { key: string; label: string; downloaded: boolean }[] }>("/ai/embedded"),

@@ -1,0 +1,2 @@
+# Extra packages for the website server (Docker image only).
+huggingface_hub==2.1.1
