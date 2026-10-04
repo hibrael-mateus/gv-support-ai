@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
@@ -52,7 +53,7 @@ def export_backup(target_dir: Path = BACKUP_DIR) -> Path:
     out = target_dir / f"GVSupportAI-backup-{datetime.now():%Y%m%d-%H%M%S}.zip"
     with tempfile.TemporaryDirectory() as tmp:
         snap = Path(tmp) / "gv_support_ai.db"
-        with connection() as conn, sqlite3.connect(snap) as dst:
+        with connection() as conn, closing(sqlite3.connect(snap)) as dst:
             conn.backup(dst)
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(snap, "gv_support_ai.db")
@@ -74,11 +75,11 @@ def import_backup(zip_path: Path) -> dict[str, Any]:
         with tempfile.TemporaryDirectory() as tmp:
             zf.extract("gv_support_ai.db", tmp)
             src = Path(tmp) / "gv_support_ai.db"
-            with sqlite3.connect(src) as check:
+            with closing(sqlite3.connect(src)) as check:
                 if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise ValueError("Backup corrompido.")
             safety = export_backup()
-            with sqlite3.connect(src) as s, sqlite3.connect(DB_PATH) as d:
+            with closing(sqlite3.connect(src)) as s, closing(sqlite3.connect(DB_PATH)) as d:
                 s.backup(d)
         if "config.json" in names:
             CONFIG_PATH.write_bytes(zf.read("config.json"))

@@ -29,7 +29,7 @@ rag.index_document(drive_file_id="ki-1", name="KI 1234 - GVcollege Rematrícula 
                    parents_lookup=lambda i: graph.get(i, []), path="/Fontes/GVcollege/KIs", modified_time="2026-09-01T10:00:00Z")
 case = cases.create_case({"title": "Portal do Professor com timeout", "customer": "Faculdade Exemplo", "product": "GVcollege",
                           "server": "PV990", "error_message": "Timeout expired.", "already_validated": "DNS PV990 = OK"})
-save_config({"setup_completed": True})
+save_config({"setup_completed": True, "internet_enabled": False})  # deterministic: no live web lookups
 
 
 def wait(url: str, seconds: int = 40) -> None:
@@ -64,7 +64,7 @@ try:
         assert pg.get_by_text("DNS PV990 = OK").count() > 0, "case memory not shown"
         pg.get_by_role("button", name="Iniciar investigação").click()
         pg.wait_for_selector("text=Analisando", state="detached", timeout=60000)
-        pg.get_by_role("button", name="Gerar PowerShell").click()
+        pg.get_by_role("button", name="Gerar PowerShell").click(timeout=120000)  # enabled once the investigation ends
         pg.wait_for_selector("text=Salvar .ps1", timeout=30000)
         pg.screenshot(path=OUT / "case.png")
 

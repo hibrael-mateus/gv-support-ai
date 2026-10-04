@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import sqlite3
+from contextlib import closing
 import tempfile
 import threading
 import time
@@ -112,7 +113,7 @@ def snapshot_db() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / _DB_NAME
-        with sqlite3.connect(DB_PATH) as src, sqlite3.connect(copy) as dst:
+        with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(copy)) as dst:
             src.backup(dst)
         HfApi(token=os.getenv("HF_TOKEN")).upload_file(path_or_fileobj=str(copy), path_in_repo=_DB_NAME,
                                                        repo_id=DATASET, repo_type="dataset",

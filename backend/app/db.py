@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 from .settings import DB_PATH
 
@@ -114,7 +114,7 @@ def init_db() -> None:
         if _initialized:
             return
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.executescript(SCHEMA)
         _initialized = True
 
