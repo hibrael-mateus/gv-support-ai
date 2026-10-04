@@ -25,7 +25,7 @@ def test_web_requires_login_and_blocks_server_side_actions(monkeypatch, tmp_path
     for method, path in (("post", "/tools/execute"), ("put", "/settings"), ("put", "/settings/secret"),
                          ("post", "/backup/import"), ("post", "/drive/connect"), ("post", "/ai/embedded/import")):
         assert getattr(c, method)(path, headers=h, json={}).status_code == 403, path
-    assert c.get("/cases", headers={"x-gv-token": token[:-1] + "0"}).status_code == 401
+    assert c.get("/cases", headers={"x-gv-token": token[:-1] + ("1" if token[-1] == "0" else "0")}).status_code == 401
 
 
 def test_login_is_rate_limited(monkeypatch, tmp_path):

@@ -64,7 +64,13 @@ try:
         assert pg.get_by_text("DNS PV990 = OK").count() > 0, "case memory not shown"
         pg.get_by_role("button", name="Iniciar investigação").click()
         pg.wait_for_selector("text=Analisando", state="detached", timeout=60000)
-        pg.get_by_role("button", name="Gerar PowerShell").click(timeout=120000)  # enabled once the investigation ends
+        try:
+            pg.get_by_role("button", name="Gerar PowerShell").click(timeout=120000)  # enabled once the investigation ends
+        except Exception:
+            print("PAGE TEXT:\n" + pg.inner_text("body")[-3000:])  # CI artifacts are not always reachable
+            log = Path(os.environ["GV_SUPPORT_DATA_DIR"]) / "Logs" / "backend.log"
+            print("BACKEND LOG:\n" + (log.read_text(encoding="utf-8")[-4000:] if log.exists() else "(none)"))
+            raise
         pg.wait_for_selector("text=Salvar .ps1", timeout=30000)
         pg.screenshot(path=OUT / "case.png")
 
