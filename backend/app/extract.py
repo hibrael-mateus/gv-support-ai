@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import re
 import zipfile
@@ -12,7 +13,7 @@ TEXT_EXT = {".txt", ".md", ".log", ".sql", ".ps1", ".psm1", ".xml", ".json", ".c
 
 KNOWN_PRODUCTS = ["GVcollege PRO", "GVcollege", "GVmobile", "GVcentris", "GVerp", "GVsign", "GVquest",
                   "Portal do Professor", "Portal Professor", "Portal do Aluno", "Pergamum", "EDUmessenger",
-                  "Gestão de Contratos", "SaaS", "Serviços"]
+                  "Gestão de Contratos", "GVnfse", "GVpay", "Gibbe", "GVmail", "SaaS", "Serviços"]
 
 DOC_TYPES = [
     (r"\bKI\s*\d+|\bKI\b", "KI"),
@@ -79,8 +80,75 @@ def extract_pages(name: str, data: bytes, mime: str = "") -> list[tuple[int, str
         reader = csv.reader(io.StringIO(text), delimiter="\t" if ext == ".tsv" else ",")
         return [(0, "\n".join(" | ".join(r) for r in reader))]
     if ext in TEXT_EXT or mime.startswith("text/") or not ext:
-        return [(0, decode_bytes(data))]
+        text = decode_bytes(data)
+        return split_package(text) if is_package(text) else [(0, text)]
     raise ValueError(f"Formato não suportado para extração de texto: {ext or mime}")
+
+
+# ---- "AI-READY-PACKAGE" markdown (TOPdesk KIs and closed tickets exported to the Drive folder) ----------
+# Each file bundles several original sources ("## Fonte: X.md") and each source holds many KIs ("### title")
+# or tickets ("#### Solicitação do cliente"). Indexing them as one blob makes citations useless ("p53.md"),
+# so every KI / ticket becomes its own section with a readable title.
+_FONTE = re.compile(r"^#{2} Fonte:\s*(.+?)\s*$", re.M)
+_TICKET = re.compile(r"(?:^|-{3})\s*#{2,4} Solicitação do cliente\s*$", re.M)
+_KI = re.compile(r"^#{3} (?!#)(.+?)\s*$", re.M)
+_NOISE = re.compile(
+    r"lembrete de retorno|estamos aguardando seu retorno|avali(e|ar) (este|o meu|meu) atendimento|sua opinião (é|nos)"
+    r"|alerta \d+h|data alvo do slo|lançar as horas|digitask|podemos encerrar|chamado encerrado|vence em \d+h"
+    r"|^\W*link topdesk:|^\W*módulo:\W*não informado", re.I)
+_PLACEHOLDER = ("Sem conteúdo", "Sem descrição")
+
+
+def is_package(text: str) -> bool:
+    return "AI-READY-PACKAGE" in text[:500] or len(_FONTE.findall(text[:20000])) > 0
+
+
+def clean_markup(text: str) -> str:
+    text = html.unescape(html.unescape(text.replace("\\&", "&")))
+    text = re.sub(r"<img[^>]*>", "", text, flags=re.I)
+    text = re.sub(r"<a\s[^>]*>(.*?)</a>", r"\1", text, flags=re.I | re.S)
+    text = re.sub(r"</?(u|b|i|ul|li|br|p|span|div|strong|em)[^>]*>", " ", text, flags=re.I)
+    text = re.sub(r"https?://\S*[?&](session|cs|token|sig|code)=\S+", "[link removido]", text, flags=re.I)
+    lines = [ln.rstrip() for ln in text.splitlines() if not _NOISE.search(ln)]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _source_meta(fonte: str) -> dict[str, str]:
+    base = re.sub(r"\s*\(trecho.*$", "", fonte).removesuffix(".md")
+    kind = "Chamado" if base.upper().startswith("FAQ_CHAMADOS") else "KI" if "KIS" in base.upper() else ""
+    product = re.sub(r"^(FAQ_CHAMADOS|COLECAO_KIS_E_MANUAIS|COLECAO_KIS)_*", "", base, flags=re.I).replace("_", " ").strip()
+    return {"fonte": base + ".md", "product": product, "doc_type": kind}
+
+
+def split_package(text: str) -> list[tuple[int, str, dict[str, str]]]:
+    """[(section_no, text, {title, fonte, product, doc_type})] for each KI or ticket in a package file."""
+    out: list[tuple[int, str, dict[str, str]]] = []
+    marks = list(_FONTE.finditer(text))
+    for i, m in enumerate(marks):
+        body = text[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(text)]
+        meta = _source_meta(m.group(1))
+        if meta["doc_type"] == "Chamado":
+            parts = _TICKET.split(body)[1:]
+            items = []
+            for part in parts:
+                request = clean_markup(part.split("Histórico técnico")[0]).lstrip("- ").strip()
+                first = re.sub(r"\s+", " ", re.sub(r"^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}\s*\[[^\]]*\][^:]*:\s*", "", request))
+                first = re.sub(r"^(bom dia|boa tarde|boa noite|olá|prezados)[,!.]?\s*(tudo bem\??)?\s*", "", first, flags=re.I)
+                items.append((f"Chamado TOPdesk ({meta['product']}): {first[:90]}", part))
+        else:
+            heads = list(_KI.finditer(body))
+            items = [(h.group(1), body[h.start(): heads[j + 1].start() if j + 1 < len(heads) else len(body)])
+                     for j, h in enumerate(heads)]
+        for title, raw in items:
+            content = clean_markup(raw)
+            if title.startswith(("Sem título", "Coleção de KIs", "Perguntas frequentes")) or len(content) < 80 \
+                    or all(p in content for p in _PLACEHOLDER):
+                continue
+            ki = re.search(r"Número da KI:\**\s*(KI\s*\d+)", content)
+            if ki and ki.group(1) not in title:
+                title = f"{ki.group(1)} · {title}"
+            out.append((len(out) + 1, content, {**meta, "title": title.strip()}))
+    return out
 
 
 def chunk_text(text: str, size: int = 1200, overlap: int = 200) -> list[str]:

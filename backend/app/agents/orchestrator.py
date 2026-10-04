@@ -31,13 +31,26 @@ ACTIONS = {
     "escalonar_n3": "Escalonar N3",
 }
 
+# Questions that ask for a database object name. Sources answer them only if they actually show one.
+DB_OBJECT_QUESTION = re.compile(
+    r"\b(nome d[aoe]s? (tabela|coluna|campo|procedure|view)s?|qual (é )?(a |o )?(tabela|coluna|procedure|view)"
+    r"|quais (s[aã]o )?(as |os )?(tabelas|colunas|procedures|views)|em que tabela|stored procedure)\b", re.I)
+SQL_IDENTIFIER = re.compile(r"\b(dbo\.\w+|[A-Z][A-Z0-9]{2,}_[A-Z0-9_]{2,}|SELECT\s[^;]{0,200}?\sFROM\s+[\w.\[\]]+)")
+
+
+# Technology outside GV Dasa products: the only topics answered from general knowledge when sources are silent.
+EXTERNAL_TECH = re.compile(
+    r"\b(windows|iis|sql server|\.net|powershell|active directory|dns|dhcp|tls|ssl|certificado|firewall|proxy|smtp"
+    r"|exchange|office ?365|microsoft|azure|vmware|hyper-?v|linux|chrome|edge|navegador|rede|porta \d+|http\s?\d{3})\b", re.I)
+
+
 INTENTS = [
     ("escalonar_n3", r"escalon|\bn3\b|n[ií]vel 3"),
     ("responder_cliente", r"respond\w* (ao |o )?cliente|resposta (ao|para o) cliente|e-?mail (ao|para o) cliente"),
     ("caso_semelhante", r"caso[s]? semelhante|similar|j[aá] aconteceu|parecid"),
     ("analisar_log", r"analis\w* (o |este |esse )?log|stack ?trace|\bexception\b.*\n.*\bat\b"),
     ("gerar_sql", r"\bsql\b|select|consulta|query|tabela|coluna|procedure|banco de dados"),
-    ("gerar_powershell", r"powershell|\bps1\b|script de diagn|servidor|\biis\b|servi[cç]o do windows|event viewer|dns|porta"),
+    ("gerar_powershell", r"powershell|\bps1\b|script de diagn|servidor|\biis\b|servi[cç]o do windows|event viewer|dns|\bporta\b"),
     ("pesquisar_fontes", r"pesquis|procur|document|manual|\bki\b|fonte"),
 ]
 
@@ -131,9 +144,13 @@ class GVSupportOrchestrator:
             scripts.append(build_diagnostic(pick_modules(message)))
         llm = self._llm()
         gv_specific = self.validation.is_gv_specific(message)
-        if use_sources and not hits and gv_specific and intent not in ("gerar_powershell",):
+        if hits and DB_OBJECT_QUESTION.search(message) and not any(SQL_IDENTIFIER.search(h["content"]) for h in hits):
+            # Related text exists, but no source names the object: never let anyone guess a table name.
+            hits = []
+        if use_sources and not hits and (gv_specific or not EXTERNAL_TECH.search(message)) \
+                and intent not in ("gerar_powershell",):
             extra = []
-            if intent == "gerar_sql":
+            if intent == "gerar_sql" or DB_OBJECT_QUESTION.search(message):
                 extra.append(discovery_script(_terms(message)))
             content = NO_EVIDENCE
             if extra:

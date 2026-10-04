@@ -9,7 +9,9 @@ from ..llm import LLMProvider, LLMUnavailable
 from ..rag import normalize
 from .base import ANTI_HALLUCINATION, NO_EVIDENCE, AgentResult, sources_block
 
-MIN_RELEVANCE = 30.0  # below this a hit is not treated as evidence
+# Below this a hit is not treated as evidence. Calibrated on real TOPdesk KIs/tickets from the authorized folder:
+# answerable tickets scored 62-100, questions about topics absent from the sources scored 16-49.
+MIN_RELEVANCE = 55.0
 
 
 class DocumentationAgent:
@@ -74,6 +76,10 @@ def _field(content: str, labels: tuple[str, ...]) -> str:
         m = re.search(rf"{label}\w*\s*[:\-–]\s*(.+)", content, re.I)
         if m:
             return m.group(1).strip()[:200]
+    # TOPdesk tickets carry no labelled fields: the latest history entry (newest first) usually holds the answer.
+    hist = re.split(r"Histórico técnico e tratativas\W*", content, maxsplit=1)
+    if len(hist) == 2 and "solu" in labels[0]:
+        return re.sub(r"\s+", " ", hist[1]).strip()[:200] or "-"
     return "-"
 
 

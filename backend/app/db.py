@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   drive_file_id TEXT NOT NULL REFERENCES sources(drive_file_id) ON DELETE CASCADE,
   page INTEGER DEFAULT 0, ordinal INTEGER DEFAULT 0,
-  content TEXT NOT NULL, embedding BLOB
+  content TEXT NOT NULL, embedding BLOB,
+  section TEXT DEFAULT '', product TEXT DEFAULT '', doc_type TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_chunks_file ON chunks(drive_file_id);
 
