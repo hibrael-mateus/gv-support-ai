@@ -30,7 +30,8 @@ export default function ChatPanel({
   const last = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   // Long answers (scripts) scroll to their first line, not their end, so the analyst reads the conclusion first.
-  useEffect(() => (busy ? end.current : last.current ?? end.current)?.scrollIntoView({ behavior: "smooth", block: busy ? "end" : "start" }), [messages.length, busy]);
+  // Braces matter: newer Chromium returns a Promise from scrollIntoView, and React would call it as the cleanup.
+  useEffect(() => { (busy ? end.current : last.current ?? end.current)?.scrollIntoView({ behavior: "smooth", block: busy ? "end" : "start" }); }, [messages.length, busy]);
   useEffect(() => {
     const focus = () => input.current?.focus();
     window.addEventListener("gv:focus-input", focus);
