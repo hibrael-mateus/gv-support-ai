@@ -53,7 +53,7 @@ try:
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=os.getenv("PLAYWRIGHT_CHROMIUM") or None)
         pg = browser.new_page(viewport={"width": 1366, "height": 768})
-        pg.on("pageerror", lambda e: errors.append(str(e)))
+        pg.on("pageerror", lambda e: errors.append(f"{e} | {e.stack}"))
         console: list[str] = []
         pg.on("console", lambda m: console.append(f"{m.type}: {m.text}"))
         pg.on("response", lambda r: "/investigate" in r.url and console.append(f"HTTP {r.status} {r.url}"))
