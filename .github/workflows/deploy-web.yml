@@ -1,7 +1,6 @@
 name: Deploy website (Hugging Face Spaces)
 
-# Turned on by the repository variable HF_SPACE (e.g. hibrael-mateus/gv-support-ai) plus the secrets
-# HF_TOKEN and GV_WEB_PASSWORD. See docs/site-web.md.
+# Turned on by the secrets HF_TOKEN and GV_WEB_PASSWORD (skips quietly without HF_TOKEN). See docs/site-web.md.
 on:
   push:
     branches: [main]
@@ -9,7 +8,6 @@ on:
 
 jobs:
   deploy:
-    if: ${{ vars.HF_SPACE != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

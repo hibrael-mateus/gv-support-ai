@@ -11,10 +11,14 @@ from pathlib import Path
 from huggingface_hub import HfApi
 
 ROOT = Path(__file__).resolve().parents[1]
-space = os.environ["HF_SPACE"]  # e.g. hibrael-mateus/gv-support-ai
-dataset = space + "-data"
-mode = os.getenv("AI_MODE") or "groq"  # groq | embedded
+if not os.getenv("HF_TOKEN"):
+    print("Segredo HF_TOKEN não configurado: site não publicado.")
+    raise SystemExit(0)
 api = HfApi(token=os.environ["HF_TOKEN"])
+space = os.getenv("HF_SPACE") or f"{api.whoami()['name']}/gv-support-ai"
+dataset = space + "-data"
+# Groq when its key exists, otherwise the model runs inside the server (slower, nothing leaves it).
+mode = os.getenv("AI_MODE") or ("groq" if os.getenv("GROQ_API_KEY") else "embedded")
 
 if not os.getenv("GV_WEB_PASSWORD"):
     raise SystemExit("Defina o segredo GV_WEB_PASSWORD no GitHub: sem ele o site ficaria sem senha.")

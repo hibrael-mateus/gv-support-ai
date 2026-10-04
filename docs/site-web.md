@@ -25,11 +25,9 @@ No repositório do GitHub, em **Settings → Secrets and variables → Actions**
 
 | Tipo | Nome | Valor |
 |---|---|---|
-| Variable | `HF_SPACE` | `seu-usuario-hf/gv-support-ai` |
-| Variable | `AI_MODE` | `groq` ou `embedded` (opcional, padrão `groq`) |
 | Secret | `HF_TOKEN` | Token do Hugging Face com permissão de escrita (huggingface.co → Settings → Access Tokens) |
 | Secret | `GV_WEB_PASSWORD` | Senha da equipe para entrar no site |
-| Secret | `GROQ_API_KEY` | Chave em console.groq.com → API Keys (só no modo `groq`) |
+| Secret | `GROQ_API_KEY` | Opcional. Chave em console.groq.com → API Keys. Sem ela, a IA roda no próprio servidor (`embedded`). |
 | Secret | `GOOGLE_SERVICE_ACCOUNT` | JSON da chave de uma conta de serviço do Google Cloud com a API Google Drive ativada |
 
 Depois, compartilhe a pasta **Fontes do Notebook LM** com o e-mail da conta de serviço
@@ -37,5 +35,5 @@ Depois, compartilhe a pasta **Fontes do Notebook LM** com o e-mail da conta de s
 compartilhar com contas externas, use o segredo `GOOGLE_OAUTH_TOKEN` (token OAuth de um usuário com acesso à pasta).
 
 A cada push na branch `main`, o workflow **Deploy website** publica o site em
-`https://huggingface.co/spaces/<HF_SPACE>` (endereço direto: `https://<usuario>-gv-support-ai.hf.space`).
+`https://huggingface.co/spaces/<usuario-hf>/gv-support-ai` (endereço direto: `https://<usuario>-gv-support-ai.hf.space`).
 O servidor indexa a pasta autorizada na primeira subida e a cada 4 horas.
