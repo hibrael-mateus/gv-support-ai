@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/build/
+backend/dist/
+ps-samples/
+
+# Node / Tauri
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+release/
+ui-screenshots/
+
+# Local data and secrets: never commit
+.env
+*.db
+client_secret*.json
+credentials*.json
+token*.json
