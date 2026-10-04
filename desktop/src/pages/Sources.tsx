@@ -64,6 +64,7 @@ export default function Sources({ initialQuery = "" }: { initialQuery?: string }
     { label: "KIs", value: t.KI ?? 0, icon: <ArticleOutlinedIcon /> },
     { label: "Manuais", value: t.Manual ?? 0, icon: <MenuBookOutlinedIcon /> },
     { label: "FAQs", value: t.FAQ ?? 0, icon: <QuizOutlinedIcon /> },
+    { label: "Chamados", value: t.Chamado ?? 0, icon: <QuizOutlinedIcon /> },
     { label: "Scripts", value: t.Script ?? 0, icon: <CodeIcon /> },
     { label: "RTMs", value: t.RTM ?? 0, icon: <AssignmentOutlinedIcon /> },
     { label: "Erros de indexação", value: stats.errors, icon: <ErrorOutlineIcon /> },

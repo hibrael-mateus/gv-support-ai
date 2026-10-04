@@ -344,7 +344,10 @@ def stats() -> dict:
         total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
         vectors = conn.execute("SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL").fetchone()[0]
-        by_type = {r[0] or "Documento": r[1] for r in conn.execute("SELECT doc_type, COUNT(*) FROM sources GROUP BY doc_type")}
+        # Package files hold many KIs/tickets: count the citable sections, not the files.
+        by_type = {r[0] or "Documento": r[1] for r in conn.execute(
+            "SELECT COALESCE(NULLIF(c.doc_type,''), s.doc_type) AS t, COUNT(DISTINCT c.drive_file_id || '|' || "
+            "COALESCE(c.section,'')) FROM chunks c JOIN sources s ON s.drive_file_id=c.drive_file_id GROUP BY t")}
         by_product = {r[0] or "Sem produto": r[1] for r in conn.execute("SELECT product, COUNT(*) FROM sources GROUP BY product")}
         errors = conn.execute("SELECT COUNT(*) FROM index_errors").fetchone()[0]
         top = [dict(r) for r in conn.execute(

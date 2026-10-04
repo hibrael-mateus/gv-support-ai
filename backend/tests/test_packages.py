@@ -59,3 +59,9 @@ def test_absent_topic_and_db_object_get_no_evidence():
     for q in ("Como configurar a catraca da portaria no GVcollege?",
               "Qual o nome da tabela de pagamentos do GVpay?"):
         assert GVSupportOrchestrator(FakeProvider()).chat(q)["message"]["content"].startswith(NO_EVIDENCE), q
+
+
+def test_stats_count_kis_and_tickets_inside_packages():
+    _index()
+    by_type = rag.stats()["by_type"]
+    assert by_type.get("KI") == 1 and by_type.get("Chamado") == 1
