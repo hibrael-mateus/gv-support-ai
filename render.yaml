@@ -12,6 +12,8 @@ services:
     envVars:
       - key: GV_WEB_PASSWORD # team password for the site
         sync: false
+      - key: GV_ADMIN_PASSWORD # password for the Administração menu (sources and settings)
+        sync: false
       - key: GV_SECRET_GEMINI_API_KEY # aistudio.google.com/apikey
         sync: false
       - key: GV_SECRET_GOOGLE_SERVICE_ACCOUNT # service account JSON with read access to the Drive folder

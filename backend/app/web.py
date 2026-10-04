@@ -23,16 +23,18 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from .settings import DB_PATH
+from .settings import CONFIG_PATH, DB_PATH
 
 log = logging.getLogger("gvsupport.web")
 
 ENABLED = os.getenv("GV_WEB_MODE", "") == "1"
 WEB_DIR = Path(os.getenv("GV_WEB_DIR", "")) if os.getenv("GV_WEB_DIR") else None
 TOKEN_HOURS = 12
-OPEN_PATHS = {"/health", "/auth/login"}
+OPEN_PATHS = {"/health", "/auth/login", "/auth/admin"}
 BLOCKED = ("/tools/execute", "/backup/", "/settings/secret", "/ai/embedded/", "/drive/connect", "/drive/disconnect",
            "/logs/path")
+# Administração: needs the admin password (GV_ADMIN_PASSWORD); without it these stay closed on the site.
+ADMIN_ONLY = (("PUT", "/settings"), ("POST", "/sources/sync"), ("POST", "/sources/upload"), ("DELETE", "/sources/"))
 _fails: dict[str, list[float]] = {}
 
 
@@ -40,15 +42,22 @@ def _key() -> bytes:
     return hashlib.sha256(("gv-web:" + os.getenv("GV_WEB_PASSWORD", "")).encode()).digest()
 
 
-def issue_token() -> str:
-    exp = str(int(time.time()) + TOKEN_HOURS * 3600)
-    return exp + "." + hmac.new(_key(), exp.encode(), hashlib.sha256).hexdigest()
+def issue_token(role: str = "team") -> str:
+    head = f"{int(time.time()) + TOKEN_HOURS * 3600}.{role}"
+    return head + "." + hmac.new(_key(), head.encode(), hashlib.sha256).hexdigest()
+
+
+def token_role(token: str) -> str:
+    """"team", "admin" or "" when the token is missing, forged or expired."""
+    head, _, sig = (token or "").rpartition(".")
+    exp, _, role = head.partition(".")
+    good = hmac.new(_key(), head.encode(), hashlib.sha256).hexdigest()
+    ok = exp.isdigit() and int(exp) > time.time() and role in ("team", "admin") and hmac.compare_digest(sig, good)
+    return role if ok else ""
 
 
 def valid_token(token: str) -> bool:
-    exp, _, sig = (token or "").partition(".")
-    good = hmac.new(_key(), exp.encode(), hashlib.sha256).hexdigest()
-    return exp.isdigit() and int(exp) > time.time() and hmac.compare_digest(sig, good)
+    return bool(token_role(token))
 
 
 def _client(request: Request) -> str:
@@ -56,19 +65,21 @@ def _client(request: Request) -> str:
     return fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
 
 
-def login(request: Request, password: str) -> dict[str, str]:
-    """Constant-time check, 10 failures per 15 minutes per address."""
+def login(request: Request, password: str, admin: bool = False) -> dict[str, str]:
+    """Constant-time check, 10 failures per 15 minutes per address (team and admin share the counter)."""
     ip, now = _client(request), time.time()
     recent = [t for t in _fails.get(ip, []) if now - t < 900]
     if len(recent) >= 10:
         raise PermissionError("Muitas tentativas. Aguarde 15 minutos.")
-    expected = os.getenv("GV_WEB_PASSWORD", "")
+    expected = os.getenv("GV_ADMIN_PASSWORD" if admin else "GV_WEB_PASSWORD", "")
     if not expected or not hmac.compare_digest(password.encode(), expected.encode()):
         _fails[ip] = recent + [now]
         time.sleep(1)
+        if admin and not expected:
+            raise PermissionError("Administração desativada: defina GV_ADMIN_PASSWORD no servidor.")
         raise PermissionError("Senha incorreta.")
     _fails.pop(ip, None)
-    return {"token": issue_token()}
+    return {"token": issue_token("admin" if admin else "team"), "role": "admin" if admin else "team"}
 
 
 def _static_file(path: str) -> bool:
@@ -82,11 +93,17 @@ async def guard(request: Request, call_next):
     path = request.url.path
     if request.method == "OPTIONS" or path in OPEN_PATHS or (request.method == "GET" and _static_file(path)):
         return await call_next(request)
-    if not valid_token(request.headers.get("x-gv-token", "")):
+    role = token_role(request.headers.get("x-gv-token", ""))
+    if not role:
         return JSONResponse({"detail": "Não autorizado"}, status_code=401)
-    if path.startswith(BLOCKED) or (path == "/settings" and request.method != "GET"):
+    if path.startswith(BLOCKED):
         return JSONResponse({"detail": "Indisponível na versão web: o servidor é configurado pelo administrador."},
                             status_code=403)
+    if role != "admin" and any(request.method == m and (path == p or p.endswith("/") and path.startswith(p))
+                               for m, p in ADMIN_ONLY):
+        return JSONResponse({"detail": "Somente a Administração pode fazer isso. Entre em Administração com a senha."},
+                            status_code=403)
+    request.state.role = role
     return await call_next(request)
 
 
@@ -120,6 +137,11 @@ def restore_db() -> None:
         src = hf_hub_download(DATASET, _DB_NAME, repo_type="dataset", token=os.getenv("HF_TOKEN"))
         shutil.copyfile(src, DB_PATH)
         log.info("database restored from dataset")
+        try:
+            shutil.copyfile(hf_hub_download(DATASET, CONFIG_PATH.name, repo_type="dataset", token=os.getenv("HF_TOKEN")),
+                            CONFIG_PATH)
+        except Exception:
+            pass  # settings never changed in Administração yet
     except Exception as exc:  # first run: nothing saved yet
         log.warning("database not restored: %s", type(exc).__name__)
 
@@ -131,13 +153,16 @@ def snapshot_db() -> None:
         copy = Path(tmp) / _DB_NAME
         with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(copy)) as dst:
             src.backup(dst)
-        HfApi(token=os.getenv("HF_TOKEN")).upload_file(path_or_fileobj=str(copy), path_in_repo=_DB_NAME,
-                                                       repo_id=DATASET, repo_type="dataset",
-                                                       commit_message="snapshot")
+        api = HfApi(token=os.getenv("HF_TOKEN"))
+        api.upload_file(path_or_fileobj=str(copy), path_in_repo=_DB_NAME, repo_id=DATASET, repo_type="dataset",
+                        commit_message="snapshot")
+        if CONFIG_PATH.exists():
+            api.upload_file(path_or_fileobj=str(CONFIG_PATH), path_in_repo=CONFIG_PATH.name, repo_id=DATASET,
+                            repo_type="dataset", commit_message="settings")
 
 
 def _signature() -> tuple:
-    return tuple(p.stat().st_mtime_ns if p.exists() else 0 for p in (DB_PATH, Path(f"{DB_PATH}-wal")))
+    return tuple(p.stat().st_mtime_ns if p.exists() else 0 for p in (DB_PATH, Path(f"{DB_PATH}-wal"), CONFIG_PATH))
 
 
 def start_snapshots(minutes: int = 10) -> None:

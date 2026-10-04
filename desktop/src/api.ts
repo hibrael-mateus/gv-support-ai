@@ -101,6 +101,7 @@ export type Settings = Record<string, unknown> & {
   embedded_model: string;
   embedded_model_path: string;
   web?: boolean;
+  admin?: boolean;
   ollama_url: string;
   llm_model: string;
   embedding_model: string;
@@ -176,6 +177,7 @@ export const api = {
     return request<Settings>("/settings", json("PUT", changes));
   },
   login: (password: string) => request<{ token: string }>("/auth/login", json("POST", { password })),
+  adminLogin: (password: string) => request<{ token: string }>("/auth/admin", json("POST", { password })),
   saveSecret: (name: string, value: string) => request("/settings/secret", json("PUT", { name, value })),
   aiModels: () => request<{ provider: string; models: string[] }>("/ai/models"),
   aiEmbedded: () => request<{ binary: boolean; selected: string; custom_path: string; models: { key: string; label: string; downloaded: boolean }[] }>("/ai/embedded"),
@@ -196,6 +198,12 @@ export const api = {
     request<{ drive_file_id: string; name: string; path: string; doc_type: string; product: string; module: string; modified_time: string; chunks: number; web_url: string }[]>(`/sources${q(params)}`),
   sourceErrors: () => request<{ id: number; name: string; error: string; created_at: string }[]>("/sources/errors"),
   search: (query: string, filters: { product?: string; doc_type?: string } = {}) => request<Source[]>(`/sources/search${q({ q: query, ...filters })}`),
+  uploadSources: (files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return request<{ indexed: { name: string; chunks: number }[] }>("/sources/upload", { method: "POST", body: fd });
+  },
+  deleteSource: (id: string) => request(`/sources/${encodeURIComponent(id)}`, json("DELETE")),
   sourceChunks: (id: string) => request<{ source: Record<string, string>; chunks: { id: number; page: number; content: string }[] }>(`/sources/${id}/chunks`),
 
   dashboard: () => request<{ investigated: number; in_progress: number; solved: number; escalated: number; sources: number; last_sync: string; ai: AiStatus; recent_cases: Case[]; recent_investigations: (Case & { last_message: string })[]; most_used: { drive_file_id: string; name: string; uses: number }[] }>("/dashboard"),

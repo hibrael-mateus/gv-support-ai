@@ -92,3 +92,37 @@ def test_gemini_falls_back_when_overloaded_and_never_leaks_the_key(monkeypatch):
     except LLMUnavailable as exc:
         assert "503" in str(exc) and key not in str(exc)
     assert key not in str(LLMUnavailable(f"error for url 'https://x/y?key={key}&a=1'"))
+
+
+def test_admin_role_unlocks_administracao_only(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    team = {"x-gv-token": c.post("/auth/login", json={"password": "senha-do-time"}).json()["token"]}
+    assert c.get("/settings", headers=team).json()["admin"] is False
+    assert c.put("/settings", headers=team, json={}).status_code == 403
+    assert c.post("/sources/upload", headers=team, files={"files": ("a.md", b"x")}).status_code == 403
+    assert c.post("/auth/admin", json={"password": "senha-do-time"}).status_code == 403  # admin password not set
+    monkeypatch.setenv("GV_ADMIN_PASSWORD", "senha-admin")
+    admin = {"x-gv-token": c.post("/auth/admin", json={"password": "senha-admin"}).json()["token"]}
+    assert c.get("/settings", headers=admin).json()["admin"] is True
+    assert c.put("/settings", headers=admin, json={"top_k": 8}).status_code == 200
+    assert c.post("/tools/execute", headers=admin, json={}).status_code == 403  # never on the server
+    forged = team["x-gv-token"].replace(".team.", ".admin.")
+    assert c.get("/cases", headers={"x-gv-token": forged}).status_code == 401
+
+
+def test_uploaded_sources_are_searchable_survive_reindex_and_can_be_deleted():
+    from app import rag
+
+    client = TestClient(app)
+    md = "# Emissão de boletim no Portal 2.0\nPara emitir o boletim no Portal do Aluno 2.0, acesse Documentos > Boletim e clique em Gerar PDF.".encode()
+    r = client.post("/sources/upload", files=[("files", ("boletim-portal.md", md, "text/markdown"))])
+    assert r.status_code == 200 and r.json()["indexed"][0]["chunks"] >= 1
+    assert client.post("/sources/upload", files={"files": ("x.exe", b"MZ")}).status_code == 400
+    hits = rag.search("como emitir o boletim no portal 2.0", 3)
+    assert hits and hits[0].source_name == "boletim-portal.md"
+    rag.clear_index()  # Drive reindex
+    fid = [s["drive_file_id"] for s in client.get("/sources").json() if s["name"] == "boletim-portal.md"][0]
+    assert fid.startswith("upload:")
+    assert client.delete(f"/sources/{fid}").status_code == 200
+    assert client.delete("/sources/drive-file-id").status_code == 400
+    assert not rag.search("como emitir o boletim no portal 2.0", 3)

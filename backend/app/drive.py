@@ -153,7 +153,8 @@ def sync(ctx: JobContext | None = None, *, gateway: GoogleDriveGateway | None = 
     cfg = load_config()
     with connection() as conn:
         known = {r["drive_file_id"]: (r["modified_time"], r["hash"]) for r in
-                 conn.execute("SELECT drive_file_id, modified_time, hash FROM sources")}
+                 conn.execute("SELECT drive_file_id, modified_time, hash FROM sources WHERE drive_file_id NOT LIKE ?",
+                              (rag.UPLOAD_PREFIX + "%",))}
     if full:
         rag.clear_index()
         known = {}

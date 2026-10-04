@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
   Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, LinearProgress,
-  List, ListItem, ListItemText, MenuItem, Stack, TextField, Typography,
+  IconButton, List, ListItem, ListItemText, MenuItem, Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import SyncIcon from "@mui/icons-material/Sync";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
@@ -21,7 +23,10 @@ import { errorText, useNotify } from "../components/notify";
 type Stats = Awaited<ReturnType<typeof api.sourceStats>>;
 const TYPES = ["KI", "Manual", "FAQ", "Script", "RTM", "Chamado", "Procedimento"];
 
-export default function Sources({ initialQuery = "" }: { initialQuery?: string }) {
+type Uploaded = Awaited<ReturnType<typeof api.sources>>;
+const UPLOAD_PATH = "Enviadas pela Administração";
+
+export default function Sources({ initialQuery = "", admin = false }: { initialQuery?: string; admin?: boolean }) {
   const notify = useNotify();
   const [stats, setStats] = useState<Stats | null>(null);
   const [job, setJob] = useState<Job | null>(null);
@@ -31,7 +36,26 @@ export default function Sources({ initialQuery = "" }: { initialQuery?: string }
   const [searching, setSearching] = useState(false);
   const [errors, setErrors] = useState<{ id: number; name: string; error: string; created_at: string }[] | null>(null);
 
-  const refresh = () => api.sourceStats().then(setStats).catch((e) => notify(errorText(e), "error"));
+  const [uploaded, setUploaded] = useState<Uploaded>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const refresh = () => {
+    api.sourceStats().then(setStats).catch((e) => notify(errorText(e), "error"));
+    if (admin) api.sources({ q: UPLOAD_PATH }).then((r) => setUploaded(r.filter((x) => x.drive_file_id.startsWith("upload:")))).catch(() => {});
+  };
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const r = await api.uploadSources(Array.from(files));
+      notify(`${r.indexed.length} fonte(s) adicionada(s) ao conhecimento`);
+      refresh();
+    } catch (e) { notify(errorText(e), "error"); } finally { setUploading(false); }
+  };
+  const remove = async (id: string, name: string) => {
+    if (!window.confirm(`Remover “${name}” do conhecimento?`)) return;
+    try { await api.deleteSource(id); refresh(); } catch (e) { notify(errorText(e), "error"); }
+  };
   const follow = async (j: Job) => {
     const done = await pollJob(j.id, setJob);
     refresh();
@@ -41,7 +65,7 @@ export default function Sources({ initialQuery = "" }: { initialQuery?: string }
 
   useEffect(() => {
     refresh();
-    api.latestJob("sync").then((j) => { if ("id" in j && j.state === "running") follow(j as Job); }).catch(() => {});
+    if (admin) api.latestJob("sync").then((j) => { if ("id" in j && j.state === "running") follow(j as Job); }).catch(() => {});
     if (initialQuery) search(initialQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,14 +99,14 @@ export default function Sources({ initialQuery = "" }: { initialQuery?: string }
     <Box>
       <PageHeader
         title="Fontes"
-        subtitle="Somente a pasta autorizada “Fontes do Notebook LM” no Google Drive (e subpastas) alimenta o conhecimento."
-        actions={
+        subtitle="O conhecimento vem só da pasta autorizada “Fontes do Notebook LM” no Google Drive e dos arquivos enviados pela Administração."
+        actions={admin && (
           <>
             <Button variant="contained" startIcon={<SyncIcon />} onClick={() => sync(false)} disabled={running}>Sincronizar agora</Button>
             <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => sync(true)} disabled={running}>Reindexar</Button>
             <Button startIcon={<ErrorOutlineIcon />} onClick={() => api.sourceErrors().then(setErrors)}>Ver erros</Button>
           </>
-        }
+        )}
       />
       {job && (running || job.state === "error") && (
         <Card sx={{ mb: 2 }}>
@@ -99,6 +123,33 @@ export default function Sources({ initialQuery = "" }: { initialQuery?: string }
       <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", mb: 3 }}>
         {cards.map((c) => <StatCard key={c.label} {...c} />)}
       </Box>
+
+      {admin && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+              <Box>
+                <Typography variant="subtitle1">Fontes enviadas</Typography>
+                <Typography variant="body2" color="text.secondary">Arquivos MD, PDF, TXT ou DOCX (até 50 MB) entram no conhecimento na hora e continuam após reindexar.</Typography>
+              </Box>
+              <Button variant="contained" component="label" startIcon={<UploadFileIcon />} loading={uploading} sx={{ flexShrink: 0 }}>
+                Anexar arquivos
+                <input hidden type="file" multiple accept=".md,.pdf,.txt,.docx" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+              </Button>
+            </Stack>
+            {!uploaded.length && <Typography variant="body2" color="text.secondary">Nenhum arquivo enviado ainda.</Typography>}
+            <List dense>
+              {uploaded.map((u) => (
+                <ListItem key={u.drive_file_id} divider secondaryAction={
+                  <Tooltip title="Remover"><IconButton edge="end" aria-label={`Remover ${u.name}`} onClick={() => remove(u.drive_file_id, u.name)}><DeleteOutlineIcon /></IconButton></Tooltip>
+                }>
+                  <ListItemText primary={u.name} secondary={`${u.chunks} trechos · ${formatDate(u.modified_time)}`} />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent>

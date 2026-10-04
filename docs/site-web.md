@@ -6,13 +6,15 @@ Os analistas só abrem o endereço e digitam a senha da equipe.
 ## O que o site faz diferente do programa
 
 - Entrada com a **senha da equipe** (10 tentativas erradas bloqueiam o endereço por 15 minutos).
-- Chamados, histórico e índice são **compartilhados** pela equipe.
+- O menu **Administração** (fontes e configurações) pede uma segunda senha, a de administrador. Lá é possível
+  sincronizar o Drive, reindexar e **anexar arquivos MD, PDF, TXT ou DOCX** como novas fontes.
+- Conversas e índice são **compartilhados** pela equipe.
 - Nenhum script é executado no servidor; o analista copia e roda no ambiente do cliente.
 - Chaves de IA e acesso ao Drive ficam só nas **variáveis secretas do Render**, nunca no código ou na tela.
 - O plano grátis dorme após 15 minutos sem uso; o primeiro acesso depois disso leva cerca de 1 minuto.
 - O disco do plano grátis é apagado quando o servidor dorme. Com `HF_TOKEN` preenchido, o banco é salvo a cada
   10 minutos num **dataset privado** do Hugging Face (`<usuario-hf>/gv-support-ai-data`, criado sozinho).
-  Sem ele, o índice do Drive é refeito a cada subida, mas chamados e histórico se perdem.
+  Sem ele, o índice do Drive é refeito a cada subida, mas os arquivos enviados e as configurações se perdem.
 
 ## Configurar (uma vez)
 
@@ -23,6 +25,7 @@ Os analistas só abrem o endereço e digitam a senha da equipe.
 | Variável | Valor |
 |---|---|
 | `GV_WEB_PASSWORD` | Senha da equipe para entrar no site |
+| `GV_ADMIN_PASSWORD` | Senha do menu Administração (diferente da senha da equipe) |
 | `GV_SECRET_GEMINI_API_KEY` | A chave do passo 1 |
 | `GV_SECRET_GOOGLE_SERVICE_ACCOUNT` | JSON da conta de serviço do Google Cloud com a API Google Drive ativada |
 | `HF_TOKEN` | Opcional (recomendado): token do Hugging Face com permissão de escrita, para guardar o banco |

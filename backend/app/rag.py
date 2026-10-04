@@ -13,6 +13,7 @@ import threading
 import unicodedata
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -182,6 +183,20 @@ def _delete_chunks(conn, drive_file_id: str) -> None:
     conn.execute("DELETE FROM chunks WHERE drive_file_id=?", (drive_file_id,))
 
 
+UPLOAD_PREFIX = "upload:"
+UPLOAD_PATH = "Enviadas pela Administração"
+
+
+def index_upload(name: str, data: bytes, pages: list, chunk_size: int = 1200) -> int:
+    """A file an administrator attached in Administração → Fontes. It is not a Drive file, so instead of the
+    Drive ancestry check it is recorded under its own root and kept out of Drive sync and reindex."""
+    fid = UPLOAD_PREFIX + content_hash(data)[:16]
+    return index_document(drive_file_id=fid, name=name, pages=pages, parents_lookup=lambda i: [UPLOAD_PATH] if i == fid else [],
+                          path=UPLOAD_PATH, file_hash=content_hash(data), chunk_size=chunk_size,
+                          modified_time=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          allowed_folder_id=UPLOAD_PATH)
+
+
 def remove_document(drive_file_id: str) -> None:
     with connection() as conn:
         _delete_chunks(conn, drive_file_id)
@@ -190,10 +205,13 @@ def remove_document(drive_file_id: str) -> None:
 
 
 def clear_index() -> None:
+    """Drop the Drive part of the index (reindex). Files sent in Administração stay."""
     with connection() as conn:
-        conn.execute("DELETE FROM chunks_fts")
-        conn.execute("DELETE FROM chunks")
-        conn.execute("DELETE FROM sources")
+        drive_ids = [r[0] for r in conn.execute("SELECT drive_file_id FROM sources WHERE drive_file_id NOT LIKE ?",
+                                                (UPLOAD_PREFIX + "%",))]
+        for fid in drive_ids:
+            _delete_chunks(conn, fid)
+        conn.execute("DELETE FROM sources WHERE drive_file_id NOT LIKE ?", (UPLOAD_PREFIX + "%",))
         conn.execute("DELETE FROM index_errors")
     _bump_version()
 
@@ -297,7 +315,7 @@ def search(
 
     hits: list[tuple[float, tuple[SearchHit, object]]] = []
     for r in rows:
-        if r["authorized_root"] != allowed_folder_id:  # defense in depth
+        if r["authorized_root"] not in (allowed_folder_id, UPLOAD_PATH):  # defense in depth: Drive folder or Administração
             continue
         if product and normalize(product) not in normalize(r["product"] or ""):
             continue

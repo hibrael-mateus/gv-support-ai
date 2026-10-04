@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import { caseStatusColor, hypothesisColor } from "../theme";
 
 /** DS "Estrutura de página": title + actions aligned right. */
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
@@ -14,14 +13,6 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
       {actions && <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>{actions}</Stack>}
     </Stack>
   );
-}
-
-export function CaseStatusChip({ status }: { status: string }) {
-  return <Chip size="small" label={status} color={caseStatusColor[status] ?? "default"} />;
-}
-
-export function HypothesisChip({ status }: { status: string }) {
-  return <Chip size="small" label={status.toUpperCase()} color={hypothesisColor[status] ?? "default"} variant={status === "Não validada" ? "outlined" : "filled"} sx={{ fontWeight: 600, fontSize: 11 }} />;
 }
 
 export function formatDate(value?: string) {

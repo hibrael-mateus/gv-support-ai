@@ -19,7 +19,7 @@ os.environ["GV_SUPPORT_DATA_DIR"] = tempfile.mkdtemp(prefix="gv-ui-data-")
 os.environ.pop("GV_API_TOKEN", None)
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app import cases, db, rag  # noqa: E402
+from app import db, rag  # noqa: E402
 from app.settings import ALLOWED_GOOGLE_DRIVE_FOLDER_ID as ALLOWED, save_config  # noqa: E402
 
 db.init_db()
@@ -27,8 +27,6 @@ graph = {"ki-1": ["sub"], "sub": [ALLOWED]}
 rag.index_document(drive_file_id="ki-1", name="KI 1234 - GVcollege Rematrícula bloqueada.pdf",
                    pages=[(1, "Sintoma: a rematrícula exibe 'Rematrícula bloqueada'. Causa: parâmetro de bloqueio por pendência financeira ativo.")],
                    parents_lookup=lambda i: graph.get(i, []), path="/Fontes/GVcollege/KIs", modified_time="2026-09-01T10:00:00Z")
-case = cases.create_case({"title": "Portal do Professor com timeout", "customer": "Faculdade Exemplo", "product": "GVcollege",
-                          "server": "PV990", "error_message": "Timeout expired.", "already_validated": "DNS PV990 = OK"})
 save_config({"setup_completed": True, "internet_enabled": False})  # deterministic: no live web lookups
 
 
@@ -54,28 +52,12 @@ try:
         browser = p.chromium.launch(executable_path=os.getenv("PLAYWRIGHT_CHROMIUM") or None)
         pg = browser.new_page(viewport={"width": 1366, "height": 768})
         pg.on("pageerror", lambda e: errors.append(f"{e} | {e.stack}"))
-        console: list[str] = []
-        pg.on("console", lambda m: console.append(f"{m.type}: {m.text}"))
-        pg.on("response", lambda r: "/investigate" in r.url and console.append(f"HTTP {r.status} {r.url}"))
         pg.goto("http://127.0.0.1:8765")
         pg.wait_for_selector("text=Visão geral", timeout=20000)
         pg.screenshot(path=OUT / "dashboard.png")
 
-        pg.get_by_role("button", name="Chamados").first.click()
-        pg.get_by_text("Portal do Professor com timeout").first.click()
-        pg.wait_for_selector("text=Memória do chamado")
-        assert pg.get_by_text("DNS PV990 = OK").count() > 0, "case memory not shown"
-        pg.get_by_role("button", name="Iniciar investigação").click()
-        pg.wait_for_selector("text=Analisando", state="detached", timeout=60000)
-        try:
-            pg.get_by_role("button", name="Gerar PowerShell").click(timeout=120000)  # enabled once the investigation ends
-        except Exception:
-            print("PAGE ERRORS:", errors, "\nCONSOLE:", console[-20:], "\nHTML:", pg.content()[-3000:])  # CI artifacts are not always reachable
-            log = Path(os.environ["GV_SUPPORT_DATA_DIR"]) / "Logs" / "backend.log"
-            print("BACKEND LOG:\n" + (log.read_text(encoding="utf-8")[-4000:] if log.exists() else "(none)"))
-            raise
-        pg.wait_for_selector("text=Salvar .ps1", timeout=30000)
-        pg.screenshot(path=OUT / "case.png")
+        assert pg.get_by_role("img", name="GV Dasa").count() == 1, "GV Dasa logo missing"
+        assert pg.get_by_role("button", name="Chamados").count() == 0, "case pages should be gone"
 
         pg.keyboard.press("Control+k")
         pg.keyboard.type("rematrícula")
@@ -86,7 +68,13 @@ try:
         pg.screenshot(path=OUT / "evidence.png")
         pg.keyboard.press("Escape")
 
-        pg.keyboard.press("Control+,")
+        pg.keyboard.press("Control+,")  # Administração (the desktop app is always admin)
+        upload = OUT / "boletim-portal.md"
+        upload.write_text("# Boletim no Portal 2.0\nPara emitir o boletim, acesse Portal 2.0 > Notas > Boletim.", encoding="utf-8")
+        pg.locator("input[type=file]").set_input_files(str(upload))
+        pg.wait_for_selector("text=boletim-portal.md", timeout=30000)
+        pg.screenshot(path=OUT / "admin-sources.png")
+        pg.get_by_role("tab", name="Configurações").click()
         pg.wait_for_selector("text=Banco vetorial")
         pg.get_by_role("button", name="IA", exact=True).click()
         pg.wait_for_selector("text=Baixar modelo")  # embedded AI is the default provider
@@ -94,9 +82,9 @@ try:
         pg.locator("header button").last.click()  # dark theme
         pg.wait_for_timeout(500)
         pg.set_viewport_size({"width": 910, "height": 512})  # 1366x768 at 150% scaling
-        pg.keyboard.press("Control+n")
-        pg.wait_for_selector("text=Iniciar investigação")
-        pg.screenshot(path=OUT / "new-case-dark-150.png")
+        pg.get_by_role("tab", name="Fontes").click()
+        pg.wait_for_selector("text=Anexar arquivos")
+        pg.screenshot(path=OUT / "admin-dark-150.png")
         assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "horizontal overflow at 150% scaling"
         browser.close()
 finally:

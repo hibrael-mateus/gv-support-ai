@@ -259,10 +259,17 @@ def auth_login(body: LoginIn, request: Request):
     return web.login(request, body.password)
 
 
+@app.post("/auth/admin")
+def auth_admin(body: LoginIn, request: Request):
+    return web.login(request, body.password, admin=True)
+
+
 @app.get("/settings")
-def get_settings():
+def get_settings(request: Request):
     cfg = load_config()
     cfg["web"] = web.ENABLED
+    # the desktop app belongs to its user; on the site only the admin password opens Administração
+    cfg["admin"] = not web.ENABLED or getattr(request.state, "role", "") == "admin"
     cfg["secrets"] = {n: bool(get_secret(n)) for n in SECRET_NAMES}
     cfg["allowed_folder_id"] = ALLOWED_GOOGLE_DRIVE_FOLDER_ID
     return cfg
@@ -360,6 +367,36 @@ def sources_sync(full: bool = False):
     if not drive.status()["connected"]:
         raise HTTPException(400, "Conecte o Google Drive antes de sincronizar.")
     return _start_sync(full)
+
+
+UPLOAD_TYPES = {".md", ".txt", ".pdf", ".docx"}
+
+
+@app.post("/sources/upload")
+def sources_upload(files: list[UploadFile] = File(...)):
+    """Administração: add MD/PDF/TXT/DOCX files to the knowledge base, next to the Drive folder."""
+    done = []
+    for f in files:
+        name = Path(f.filename or "arquivo").name
+        if Path(name).suffix.lower() not in UPLOAD_TYPES:
+            raise HTTPException(400, f"{name}: envie arquivos .md, .pdf, .txt ou .docx.")
+        data = f.file.read()
+        if len(data) > 50 * 1024 * 1024:
+            raise HTTPException(413, f"{name}: arquivo maior que 50 MB.")
+        pages = extract_pages(name, data, f.content_type or "")
+        if not any(t.strip() for _, t, *_ in pages):
+            raise HTTPException(400, f"{name}: não há texto para indexar (PDF digitalizado como imagem?).")
+        chunks = rag.index_upload(name, data, pages, chunk_size=int(load_config().get("chunk_size", 1200)))
+        done.append({"name": name, "chunks": chunks})
+    return {"indexed": done}
+
+
+@app.delete("/sources/{drive_file_id}")
+def sources_delete(drive_file_id: str):
+    if not drive_file_id.startswith(rag.UPLOAD_PREFIX):
+        raise HTTPException(400, "Fontes do Google Drive saem do índice quando são removidas da pasta autorizada.")
+    rag.remove_document(drive_file_id)
+    return {"deleted": drive_file_id}
 
 
 @app.get("/jobs/{job_id}")

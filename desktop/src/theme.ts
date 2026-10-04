@@ -65,19 +65,3 @@ export function buildTheme(mode: PaletteMode) {
     },
   });
 }
-
-export const hypothesisColor: Record<string, "default" | "info" | "warning" | "success" | "error"> = {
-  "Não validada": "default",
-  "Em análise": "info",
-  "Muito provável": "warning",
-  Confirmada: "success",
-  Descartada: "error",
-};
-
-export const caseStatusColor: Record<string, "default" | "info" | "warning" | "success" | "error" | "secondary"> = {
-  "Em investigação": "info",
-  "Aguardando cliente": "warning",
-  Solucionado: "success",
-  "Escalonado N3": "secondary",
-  Cancelado: "default",
-};
