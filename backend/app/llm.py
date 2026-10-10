@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+import anthropic
 import httpx
 
 from . import embedded
@@ -295,6 +296,59 @@ class GeminiProvider(LLMProvider):
             return None
 
 
+CLAUDE_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]
+
+
+class ClaudeProvider(LLMProvider):
+    """Anthropic Claude through the official SDK. Paid per use; the best answers of the cloud options."""
+
+    name = "claude"
+    secret_name = "anthropic_api_key"
+
+    def __init__(self, api_key: str = "", **kw):
+        super().__init__(**kw)
+        self.api_key = api_key
+        self.model = self.model if self.model in CLAUDE_MODELS else CLAUDE_MODELS[0]
+
+    def list_models(self) -> list[str]:
+        return CLAUDE_MODELS if self.api_key else []  # fixed list: no network call on every status check
+
+    def status(self) -> dict[str, Any]:
+        return {"online": bool(self.api_key), "provider": self.name, "models": self.list_models(), "model": self.model,
+                "embedding_model": "", **({} if self.api_key else {"error": "Chave da Anthropic não configurada."})}
+
+    def chat(self, messages: list[Message], json_mode: bool = False) -> str:
+        if not self.api_key:
+            raise LLMUnavailable("Claude indisponível (chave da Anthropic não configurada).")
+        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+        turns: list[dict[str, str]] = []
+        for m in messages:  # the API wants alternating user/assistant turns that start with the user
+            if m["role"] == "system":
+                continue
+            if turns and turns[-1]["role"] == m["role"]:
+                turns[-1] = {"role": m["role"], "content": turns[-1]["content"] + "\n\n" + m["content"]}
+            elif turns or m["role"] == "user":
+                turns.append({"role": m["role"], "content": m["content"]})
+        client = anthropic.Anthropic(api_key=self.api_key, timeout=180.0)
+        try:
+            r = client.messages.create(model=self.model, max_tokens=8000, system=system or anthropic.omit,
+                                       messages=turns, output_config={"effort": "medium"})
+        except anthropic.AuthenticationError as exc:
+            raise LLMUnavailable("Claude indisponível (chave inválida).") from exc
+        except anthropic.RateLimitError as exc:
+            raise LLMUnavailable("Claude indisponível (limite de uso atingido, tente mais tarde).") from exc
+        except anthropic.APIStatusError as exc:
+            raise LLMUnavailable(f"Claude indisponível (HTTP {exc.status_code}).") from exc
+        except anthropic.APIConnectionError as exc:
+            raise LLMUnavailable(f"Claude indisponível ({type(exc).__name__}).") from exc
+        if r.stop_reason == "refusal":
+            raise LLMUnavailable("Claude recusou responder esta pergunta.")
+        text = "".join(b.text for b in r.content if b.type == "text")
+        if not text:
+            raise LLMUnavailable(f"Claude não gerou resposta ({r.stop_reason}).")
+        return text
+
+
 class EmbeddedProvider(OpenAICompatibleProvider):
     """The engine bundled with the app (see embedded.py); started on first use."""
 
@@ -342,6 +396,10 @@ def get_provider(cfg: dict[str, Any] | None = None) -> LLMProvider:
         return EmbeddedProvider(cfg.get("embedded_model", ""), cfg.get("embedded_model_path", ""), **kw)
     if kind == "openai_compatible":
         return OpenAICompatibleProvider(cfg.get("openai_base_url", ""), get_secret("openai_api_key"), **kw)
+    if kind == "claude" and not get_secret("anthropic_api_key") and get_secret("gemini_api_key"):
+        kind = "gemini"  # the site keeps answering with Gemini until the Anthropic key is added
+    if kind == "claude":
+        return ClaudeProvider(get_secret("anthropic_api_key"), **kw)
     if kind == "gemini":
         return GeminiProvider(get_secret("gemini_api_key"), **kw)
     if kind == "groq":

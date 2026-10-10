@@ -10,6 +10,7 @@ export const PROVIDERS = [
   { id: "embedded", label: "IA embutida (recomendado, não precisa instalar nada)", key: "" },
   { id: "ollama", label: "Ollama (instalado à parte)", key: "" },
   { id: "openai_compatible", label: "OpenAI compatível", key: "openai_api_key" },
+  { id: "claude", label: "Claude (Anthropic, pago por uso, melhor qualidade)", key: "anthropic_api_key" },
   { id: "gemini", label: "Google Gemini", key: "gemini_api_key" },
   { id: "groq", label: "Groq", key: "groq_api_key" },
   { id: "custom", label: "Personalizado (endpoint OpenAI compatível)", key: "custom_api_key" },

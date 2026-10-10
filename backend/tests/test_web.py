@@ -126,3 +126,37 @@ def test_uploaded_sources_are_searchable_survive_reindex_and_can_be_deleted():
     assert client.delete(f"/sources/{fid}").status_code == 200
     assert client.delete("/sources/drive-file-id").status_code == 400
     assert not rag.search("como emitir o boletim no portal 2.0", 3)
+
+
+def test_claude_merges_turns_handles_refusal_and_waits_for_its_key(monkeypatch):
+    from types import SimpleNamespace
+
+    import anthropic
+
+    from app import llm
+
+    sent = []
+
+    class FakeClient:
+        def __init__(self, api_key, timeout):
+            self.messages = SimpleNamespace(create=lambda **kw: sent.append(kw) or reply)
+
+    reply = SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="thinking"), SimpleNamespace(type="text", text="ok")])
+    monkeypatch.setattr(anthropic, "Anthropic", FakeClient)
+    p = llm.ClaudeProvider("sk-ant-test", model="gpt-4")
+    assert p.model == "claude-sonnet-5-5"  # unknown model names fall back to the default
+    out = p.chat([{"role": "system", "content": "S"}, {"role": "assistant", "content": "a0"}, {"role": "user", "content": "u1"},
+                  {"role": "user", "content": "u2"}])
+    assert out == "ok" and sent[0]["system"] == "S"
+    assert sent[0]["messages"] == [{"role": "user", "content": "u1\n\nu2"}]  # starts with the user, no repeated roles
+    reply = SimpleNamespace(stop_reason="refusal", content=[])
+    try:
+        p.chat([{"role": "user", "content": "x"}])
+        raise AssertionError("expected LLMUnavailable")
+    except llm.LLMUnavailable as exc:
+        assert "recusou" in str(exc)
+
+    monkeypatch.setattr(llm, "get_secret", lambda n: {"gemini_api_key": "g"}.get(n, ""))
+    assert llm.get_provider({"llm_provider": "claude"}).name == "gemini"  # site keeps working until the key is set
+    monkeypatch.setattr(llm, "get_secret", lambda n: {"anthropic_api_key": "a", "gemini_api_key": "g"}.get(n, ""))
+    assert llm.get_provider({"llm_provider": "claude", "llm_model": "claude-haiku-5-5"}).model == "claude-haiku-5-5"

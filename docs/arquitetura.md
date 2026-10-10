@@ -33,7 +33,7 @@
 | `extract.py` | Texto de PDF (por página), DOCX (com tabelas), XLSX (aba = página), ZIP, CSV e texto; metadados (produto, módulo, tipo) |
 | `rag.py` | Indexação e busca híbrida |
 | `drive.py` | OAuth (App para computador, escopo `drive.readonly`), varredura recursiva, sincronização incremental |
-| `llm.py` | `LLMProvider`: IA embutida (padrão), Ollama, OpenAI compatível, Gemini, Groq, Personalizado |
+| `llm.py` | `LLMProvider`: IA embutida (padrão), Ollama, OpenAI compatível, Claude, Gemini, Groq, Personalizado |
 | `embedded.py` | Motor `llama-server` (llama.cpp, CPU) incluído no instalador; baixa o modelo GGUF uma vez com verificação SHA-256, inicia sob demanda em porta local com chave aleatória e morre junto com o backend (Job Object) |
 | `agents/` | Orquestrador e agentes especialistas |
 | `cases.py` | Chamados, memória do caso, hipóteses, histórico, painel |

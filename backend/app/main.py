@@ -36,7 +36,7 @@ logging.basicConfig(level=logging.INFO, handlers=[_handler])
 log = logging.getLogger("gvsupport")
 
 API_TOKEN = os.getenv("GV_API_TOKEN", "")
-SECRET_NAMES = {"openai_api_key", "gemini_api_key", "groq_api_key", "custom_api_key"}
+SECRET_NAMES = {"openai_api_key", "anthropic_api_key", "gemini_api_key", "groq_api_key", "custom_api_key"}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):

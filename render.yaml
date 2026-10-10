@@ -14,6 +14,8 @@ services:
         sync: false
       - key: GV_ADMIN_PASSWORD # password for the Administração menu (sources and settings)
         sync: false
+      - key: GV_SECRET_ANTHROPIC_API_KEY # console.anthropic.com > API Keys (paid per use); while empty the site uses Gemini
+        sync: false
       - key: GV_SECRET_GEMINI_API_KEY # aistudio.google.com/apikey
         sync: false
       - key: GV_SECRET_GOOGLE_SERVICE_ACCOUNT # service account JSON with read access to the Drive folder
@@ -21,8 +23,8 @@ services:
       - key: HF_TOKEN # optional: keeps cases and history in a private Hugging Face dataset across restarts
         sync: false
       - key: GV_CONFIG_LLM_PROVIDER
-        value: gemini
-      - key: GV_CONFIG_EMBEDDING_MODEL # lexical search only: saves the free Gemini quota for answers
+        value: claude
+      - key: GV_CONFIG_EMBEDDING_MODEL # lexical search only: neither Claude nor the free Gemini quota is spent on embeddings
         value: '""'
       - key: GV_CONFIG_INTERNET_ENABLED
         value: "true"

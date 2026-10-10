@@ -1,6 +1,6 @@
 # Versão site (sem instalar nada nos computadores)
 
-O mesmo GV Support AI roda como site no plano gratuito do **Render**, com a IA gratuita do **Google Gemini**.
+O mesmo GV Support AI roda como site no plano gratuito do **Render**, com o **Claude** (Anthropic, pago por uso) como IA. Sem a chave da Anthropic, o site usa o **Google Gemini**, que é gratuito.
 Os analistas só abrem o endereço e digitam a senha da equipe.
 
 ## O que o site faz diferente do programa
@@ -26,7 +26,8 @@ Os analistas só abrem o endereço e digitam a senha da equipe.
 |---|---|
 | `GV_WEB_PASSWORD` | Senha da equipe para entrar no site |
 | `GV_ADMIN_PASSWORD` | Senha do menu Administração (diferente da senha da equipe) |
-| `GV_SECRET_GEMINI_API_KEY` | A chave do passo 1 |
+| `GV_SECRET_ANTHROPIC_API_KEY` | Chave do Claude: console.anthropic.com → **Billing** (cadastre um cartão) → **API Keys** → **Create Key** |
+| `GV_SECRET_GEMINI_API_KEY` | A chave do passo 1 (usada enquanto a chave da Anthropic estiver vazia) |
 | `GV_SECRET_GOOGLE_SERVICE_ACCOUNT` | JSON da conta de serviço do Google Cloud com a API Google Drive ativada |
 | `HF_TOKEN` | Opcional (recomendado): token do Hugging Face com permissão de escrita, para guardar o banco |
 
@@ -44,5 +45,7 @@ O servidor indexa a pasta autorizada na primeira subida e a cada 4 horas.
 
 - **Hugging Face Spaces:** desde 2026 exige o plano PRO para servidores Docker. Com PRO, rode manualmente o workflow
   **Deploy website (Hugging Face Spaces)**; lá a IA pode rodar dentro do servidor (`AI_MODE=embedded`).
+- **Modelo do Claude:** o padrão é o Claude Sonnet 5.5 (melhor qualidade, alguns centavos de dólar por pergunta).
+  Para gastar menos, escolha o Claude Haiku 5.5 em Administração → Configurações → IA.
 - **Outra IA:** troque `GV_CONFIG_LLM_PROVIDER` para `groq` (com `GV_SECRET_GROQ_API_KEY`) ou outro provedor da tela
   Configurações → IA do programa.

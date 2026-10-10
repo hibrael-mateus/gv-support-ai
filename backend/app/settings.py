@@ -35,7 +35,7 @@ for _d in (DATA_DIR, CACHE_DIR, LOG_DIR, ATTACH_DIR, BACKUP_DIR):
 DEFAULTS: dict[str, Any] = {
     "setup_completed": False,
     "theme": "system",  # light | dark | system
-    "llm_provider": "embedded",  # embedded | ollama | openai_compatible | gemini | groq | custom
+    "llm_provider": "embedded",  # embedded | ollama | openai_compatible | claude | gemini | groq | custom
     "embedded_model": "qwen2.5-3b",  # catalog key in embedded.MODELS
     "embedded_model_path": "",  # a .gguf the analyst imported; overrides the catalog model
     "ollama_url": "http://127.0.0.1:11434",

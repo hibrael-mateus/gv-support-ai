@@ -11,7 +11,8 @@ Configurações → **IA**.
 | IA embutida (padrão) | Nada a instalar; dados não saem do computador | Modelo: Qwen2.5 3B (recomendado), 7B ou 0.5B; ou um `.gguf` importado |
 | Ollama | Já usa Ollama instalado à parte | Endereço (padrão `http://127.0.0.1:11434`), modelo de chat, `nomic-embed-text` |
 | OpenAI compatível | Endpoint corporativo compatível com OpenAI | URL base, chave de API |
-| Gemini / Groq | Nuvem, se a política da empresa permitir | Chave de API |
+| Claude (Anthropic) | Melhor qualidade; nuvem paga por uso, se a política da empresa permitir | Chave de API (console.anthropic.com); modelo Sonnet 5.5 (padrão) ou Haiku 5.5 (mais barato) |
+| Gemini / Groq | Nuvem gratuita, se a política da empresa permitir | Chave de API |
 | Personalizado | Outro servidor compatível com OpenAI | URL base, chave |
 
 As chaves ficam no Gerenciador de Credenciais do Windows. Use **Testar IA** para validar chat e embeddings.
