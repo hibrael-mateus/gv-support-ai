@@ -24,7 +24,7 @@ from .settings import ALLOWED_GOOGLE_DRIVE_FOLDER_ID
 
 STOPWORDS = set("""a o e é de da do das dos em no na nos nas um uma uns umas para por com sem que se ao aos à às ou
 como mais menos ser está esta este isso isto qual quais quando onde porque pois não sim the and of to in on for
-erro ao""".split())
+erro ao eu voce vc meu minha meus minhas me gente preciso quero gostaria""".split())
 
 
 # Words every support request uses; they help ranking but must not decide whether a source answers it.

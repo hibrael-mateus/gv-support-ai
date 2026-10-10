@@ -23,9 +23,9 @@ class DocumentationAgent:
     def _embedder(self):
         return self.provider.embed if self.provider else None
 
-    def search(self, query: str, limit: int = 6, **filters) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 6, min_relevance: float = MIN_RELEVANCE, **filters) -> list[dict[str, Any]]:
         hits = rag.search(query, limit, embedder=self._embedder(), **filters)
-        return [h.as_dict() for h in hits if h.relevance >= MIN_RELEVANCE]
+        return [h.as_dict() for h in hits if h.relevance >= min_relevance]
 
     def run(self, query: str, limit: int = 8, **filters) -> AgentResult:
         hits = self.search(query, limit, **filters)

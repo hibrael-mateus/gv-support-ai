@@ -14,6 +14,7 @@ from ..llm import LLMProvider, LLMUnavailable, get_provider
 from ..settings import load_config
 from .base import NO_EVIDENCE, AgentResult, Script
 from .logs import analyze_log, summary_markdown
+from .research import ResearchAgent
 from .powershell import PS_SYSTEM, build_diagnostic, guard_powershell, pick_modules
 from .specialists import (SYSTEM_BASE, CustomerResponseAgent, DocumentationAgent, N3EscalationAgent,
                           SimilarCaseAgent, ValidationAgent, evidence_known_text, source_context)
@@ -115,8 +116,11 @@ class GVSupportOrchestrator:
         return (f"DADOS DO CHAMADO:\n{brief}\n\nMEMÓRIA DO CHAMADO (testes já realizados, não repetir):\n{memory or '(vazia)'}"
                 f"\n\nHIPÓTESES ATUAIS:\n{hyps or '(nenhuma)'}")
 
-    def _history(self, case_id: int | None, n: int = 8) -> list[dict[str, str]]:
-        msgs = cases.list_messages(case_id, n)
+    def _history(self, case_id: int | None, n: int = 8, current: str = "") -> list[dict[str, str]]:
+        msgs = cases.list_messages(case_id, n + 1)
+        if current and msgs and msgs[-1]["role"] == "user" and msgs[-1]["content"] == current:
+            msgs = msgs[:-1]  # the question being answered goes in the prompt itself
+        msgs = msgs[-n:]
         return [{"role": "assistant" if m["role"] == "assistant" else "user", "content": m["content"][:4000]} for m in msgs]
 
     # ---- free chat ---------------------------------------------------------
@@ -131,59 +135,79 @@ class GVSupportOrchestrator:
         return {"message": msg}
 
     def _free_chat(self, message: str, use_sources: bool, intent: str) -> AgentResult:
-        hits = self.docs.search(message, 6) if use_sources else []
         if intent == "analisar_log":
             res = analyze_log(message)
             return AgentResult("LogAnalysisAgent", summary_markdown(res), meta={"log": res})
         if intent == "caso_semelhante":
             return self.similar.run(message)
+        llm = self._llm()
+        if llm and use_sources and intent not in ("gerar_sql", "gerar_powershell"):
+            return self._research(llm, message, intent)
+        hits = self.docs.search(message, 6) if use_sources else []
         if intent == "pesquisar_fontes":
             return self.docs.run(message)
         scripts: list[Script] = []
         if intent == "gerar_powershell":
             scripts.append(build_diagnostic(pick_modules(message)))
-        llm = self._llm()
         gv_specific = self.validation.is_gv_specific(message)
         if hits and DB_OBJECT_QUESTION.search(message) and not any(SQL_IDENTIFIER.search(h["content"]) for h in hits):
             # Related text exists, but no source names the object: never let anyone guess a table name.
             hits = []
         if use_sources and not hits and (gv_specific or not EXTERNAL_TECH.search(message)) \
                 and intent not in ("gerar_powershell",):
-            extra = []
-            if intent == "gerar_sql" or DB_OBJECT_QUESTION.search(message):
-                extra.append(discovery_script(_terms(message)))
-            content = NO_EVIDENCE
-            if extra:
-                content += "\n\nPara descobrir a estrutura no banco do cliente, execute as consultas de descoberta abaixo (somente leitura)."
-            return AgentResult("ValidationAgent", content, [], extra)
+            return self._no_evidence(message, intent)
         if not llm:
-            content = ("**IA offline** — configure o Ollama em Configurações > Inteligência Artificial.\n\n"
+            content = ("**IA offline** — configure a IA em Administração > Configurações > IA.\n\n"
                        + (self.docs.run(message).content if hits else ""))
             if intent == "gerar_sql":
                 scripts.append(discovery_script(_terms(message)))
             return AgentResult("GVSupportOrchestrator", content, hits, scripts, {"llm": False})
-        web = []
-        if self.cfg.get("internet_enabled") and not gv_specific and intent in ("investigar", "gerar_powershell"):
-            web = internet.search_microsoft_learn(message, 3)
+        web = self._web(message, gv_specific, intent)
         system = SQL_SYSTEM if intent == "gerar_sql" else PS_SYSTEM if intent == "gerar_powershell" else SYSTEM_BASE
-        user = f"{source_context(hits)}\n\n" + (
-            "REFERÊNCIAS MICROSOFT (complemento externo):\n" + "\n".join(f"- {w['title']}: {w['url']}" for w in web) + "\n\n" if web else "") \
-            + f"PERGUNTA DO ANALISTA:\n{message}"
+        user = f"{source_context(hits)}\n\n{_web_block(web)}PERGUNTA DO ANALISTA:\n{message}"
         try:
             if intent in ("gerar_sql", "gerar_powershell"):
-                data = self.provider.chat_json([{"role": "system", "content": system}, *self._history(None, 4),
+                data = self.provider.chat_json([{"role": "system", "content": system}, *self._history(None, 4, message),
                                                 {"role": "user", "content": user}])
                 answer = data.get("explanation") or ""
                 scripts += self._scripts_from_llm(data, None, hits, message)
             else:
-                answer = self.provider.chat([{"role": "system", "content": system}, *self._history(None, 6),
+                answer = self.provider.chat([{"role": "system", "content": system}, *self._history(None, 6, message),
                                              {"role": "user", "content": user}])
         except LLMUnavailable as exc:
             return AgentResult("GVSupportOrchestrator", f"**IA indisponível:** {exc}", hits, scripts, {"llm": False})
         answer, issues = self.validation.check_answer(answer, hits, message)
-        if web:
-            answer += "\n\n**Referências Microsoft:**\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)
-        return AgentResult("GVSupportOrchestrator", answer, hits, scripts, {"validation": issues, "web": web})
+        return AgentResult("GVSupportOrchestrator", answer + _web_links(web), hits, scripts, {"validation": issues, "web": web})
+
+    def _research(self, llm: LLMProvider, message: str, intent: str) -> AgentResult:
+        gv_specific = self.validation.is_gv_specific(message)
+        web = self._web(message, gv_specific, intent)
+        try:
+            answer, hits, meta = ResearchAgent(llm, self.docs).run(message, self._history(None, 6, message), _web_block(web),
+                                                                   general_ok=not gv_specific and bool(EXTERNAL_TECH.search(message)))
+        except LLMUnavailable as exc:
+            fallback = self.docs.run(message)
+            note = "" if fallback.sources else "\n\n" + NO_EVIDENCE
+            return AgentResult("GVSupportOrchestrator", f"**IA indisponível:** {exc}\n\n" + fallback.content.removeprefix(NO_EVIDENCE) + note,
+                               fallback.sources, meta={"llm": False})
+        if DB_OBJECT_QUESTION.search(message) and not any(SQL_IDENTIFIER.search(h["content"]) for h in hits):
+            return self._no_evidence(message, intent)  # no source names the object: never let anyone guess a table name
+        answer, issues = self.validation.check_answer(answer, hits, message)
+        return AgentResult("ResearchAgent", answer + _web_links(web), hits, meta={"validation": issues, "web": web, **meta})
+
+    def _no_evidence(self, message: str, intent: str) -> AgentResult:
+        extra = []
+        if intent == "gerar_sql" or DB_OBJECT_QUESTION.search(message):
+            extra.append(discovery_script(_terms(message)))
+        content = NO_EVIDENCE
+        if extra:
+            content += "\n\nPara descobrir a estrutura no banco do cliente, execute as consultas de descoberta abaixo (somente leitura)."
+        return AgentResult("ValidationAgent", content, [], extra)
+
+    def _web(self, message: str, gv_specific: bool, intent: str) -> list[dict[str, str]]:
+        if self.cfg.get("internet_enabled") and not gv_specific and intent in ("investigar", "gerar_powershell"):
+            return internet.search_microsoft_learn(message, 3)
+        return []
 
     def _scripts_from_llm(self, data: dict[str, Any], case: dict[str, Any] | None, hits: list[dict[str, Any]],
                           extra: str) -> list[Script]:
@@ -368,6 +392,14 @@ class GVSupportOrchestrator:
         if terms:
             scripts.append(discovery_script(terms))
         return AgentResult("GVSupportOrchestrator", "\n\n".join(parts), hits, scripts, {"llm": False})
+
+
+def _web_block(web: list[dict[str, str]]) -> str:
+    return ("REFERÊNCIAS MICROSOFT (complemento externo):\n" + "\n".join(f"- {w['title']}: {w['url']}" for w in web) + "\n\n") if web else ""
+
+
+def _web_links(web: list[dict[str, str]]) -> str:
+    return ("\n\n**Referências Microsoft:**\n" + "\n".join(f"- [{w['title']}]({w['url']})" for w in web)) if web else ""
 
 
 def _terms(text: str) -> list[str]:

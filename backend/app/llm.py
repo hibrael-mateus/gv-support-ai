@@ -1,8 +1,10 @@
 """LLM providers. Embedded llama.cpp is the default: no install, no paid API, nothing leaves the computer."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -225,13 +227,21 @@ class GeminiProvider(LLMProvider):
     def _headers(self) -> dict[str, str]:
         return {"x-goog-api-key": self.api_key}  # header, not ?key=: URLs end up in error messages
 
+    _models: tuple[float, str, list[str]] = (0.0, "", [])  # (time, key hash, names): one lookup per 10 min, not per question
+
     def list_models(self) -> list[str]:
+        key = hashlib.sha256(self.api_key.encode()).hexdigest()
+        at, cached_key, names = GeminiProvider._models
+        if names and cached_key == key and time.time() - at < 600:
+            return names
         try:
             r = httpx.get(f"{self.base}/models", headers=self._headers(), params={"pageSize": 1000}, timeout=10)
             r.raise_for_status()
-            return [m["name"].removeprefix("models/") for m in r.json().get("models", [])]
+            names = [m["name"].removeprefix("models/") for m in r.json().get("models", [])]
         except Exception:
             return []
+        GeminiProvider._models = (time.time(), key, names)
+        return names
 
     def status(self) -> dict[str, Any]:
         models = self.list_models()
@@ -260,8 +270,11 @@ class GeminiProvider(LLMProvider):
             status = r.status_code
             if status == 200:
                 self.model = model
-                parts = r.json()["candidates"][0]["content"].get("parts", [])
-                return "".join(p.get("text", "") for p in parts)
+                cand = (r.json().get("candidates") or [{}])[0]
+                text = "".join(p.get("text", "") for p in (cand.get("content") or {}).get("parts", []) if not p.get("thought"))
+                if not text:  # blocked by a safety filter or cut by the token limit
+                    raise LLMUnavailable(f"Gemini não gerou resposta ({cand.get('finishReason') or 'sem conteúdo'}).")
+                return text
             if status not in (404, 429, 500, 503):
                 break
         hint = {400: "chave ou pedido inválido", 403: "chave sem permissão", 429: "limite gratuito atingido, tente mais tarde",
