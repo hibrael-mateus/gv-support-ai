@@ -66,8 +66,8 @@ jobs:
         working-directory: desktop
       - run: python tests/ui_smoke.py ui-screenshots
       - uses: actions/upload-artifact@v4
-        if: always()
-        with: { name: ui-screenshots, path: ui-screenshots }
+        if: failure()  # screenshots only help when the test fails; the free artifact quota is 500 MB
+        with: { name: ui-screenshots, path: ui-screenshots, retention-days: 3 }
 
   installer:
     needs: [backend-tests, ui-tests]
@@ -162,7 +162,7 @@ jobs:
           Write-Host "Install / launch / uninstall OK"
 
       - uses: actions/upload-artifact@v4
-        with: { name: GVSupportAI-windows, path: release/* }
+        with: { name: GVSupportAI-windows, path: release/*, retention-days: 14 }  # ~130 MB each: keep only recent builds
 
       - name: Publish release (tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
