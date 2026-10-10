@@ -15,6 +15,7 @@ from ..settings import load_config
 from .base import NO_EVIDENCE, AgentResult, Script
 from .logs import analyze_log, summary_markdown
 from .research import ResearchAgent
+from .rtm import RTMAgent
 from .powershell import PS_SYSTEM, build_diagnostic, guard_powershell, pick_modules
 from .specialists import (SYSTEM_BASE, CustomerResponseAgent, DocumentationAgent, N3EscalationAgent,
                           SimilarCaseAgent, ValidationAgent, evidence_known_text, source_context)
@@ -46,6 +47,7 @@ EXTERNAL_TECH = re.compile(
 
 
 INTENTS = [
+    ("rtm", r"\.rtm\b|\brtms?\b|reportbuilder|report builder|\bRAP\b|\bTpp\w+|aba calc|OnCalc|\bprocedure\s+\w+\s*\("),
     ("escalonar_n3", r"escalon|\bn3\b|n[ií]vel 3"),
     ("responder_cliente", r"respond\w* (ao |o )?cliente|resposta (ao|para o) cliente|e-?mail (ao|para o) cliente"),
     ("caso_semelhante", r"caso[s]? semelhante|similar|j[aá] aconteceu|parecid"),
@@ -141,6 +143,10 @@ class GVSupportOrchestrator:
         if intent == "caso_semelhante":
             return self.similar.run(message)
         llm = self._llm()
+        if intent == "rtm":
+            ask = message.split("[Arquivo:", 1)[0].strip() or "relatório RTM"
+            hits = self.docs.search(f"RTM relatório {ask[:300]}", 4) if use_sources else []
+            return RTMAgent(llm).run(message, hits)
         if llm and use_sources and intent not in ("gerar_sql", "gerar_powershell"):
             return self._research(llm, message, intent)
         hits = self.docs.search(message, 6) if use_sources else []

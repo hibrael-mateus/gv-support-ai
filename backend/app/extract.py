@@ -75,6 +75,10 @@ def extract_pages(name: str, data: bytes, mime: str = "") -> list[tuple[int, str
                     for _, text in extract_pages(info.filename, zf.read(info), ""):
                         pages.append((0, f"[{info.filename}]\n{text}"))
         return pages
+    if ext == ".rtm":  # ReportBuilder: components, SQL and the RAP code hidden in a binary property
+        from .agents.rtm import describe
+
+        return [(0, describe(name, data))]
     if ext == ".csv" or ext == ".tsv" or mime == "text/csv":
         text = decode_bytes(data)
         reader = csv.reader(io.StringIO(text), delimiter="\t" if ext == ".tsv" else ",")
