@@ -65,3 +65,74 @@ def test_stats_count_kis_and_tickets_inside_packages():
     _index()
     by_type = rag.stats()["by_type"]
     assert by_type.get("KI") == 1 and by_type.get("Chamado") == 1
+
+
+COLLECTION = """# Coleção de KIs — Portal do Aluno 2.0
+
+Documento gerado automaticamente a partir do TOPdesk.
+
+---
+
+## Sem título
+
+**Número da KI:** Não informado
+
+### Conteúdo
+
+Sem conteúdo
+
+---# Portal do Aluno 2.0 - Impressão de boletim
+
+- **Número da KI:** KI 4694
+- **Módulo:** Não informado
+
+---
+
+## 1. Descrição e Objetivo
+
+Para imprimir o boletim no Portal do Aluno 2.0 o responsável acessa Boletim e clica em Imprimir; o modelo vem do parâmetro.
+
+## 2. Procedimento, Regras e Informações da KI
+
+O botão só aparece com a etapa fechada.
+"""
+
+FAQ = """# Perguntas frequentes — Portal do Professor 2.0
+
+FAQs produzidas a partir de chamados encerrados do TOPdesk.
+
+---
+
+**Chamado:** 2609-1466
+
+## Por que a nota de recuperação aparece no diário dos outros professores do grupo?
+
+Quando as disciplinas estão no mesmo grupo, a recuperação fica associada ao grupo inteiro e aparece para todos.
+
+**Produto:** Portal do Professor 2.0
+
+---
+"""
+
+
+def test_standalone_collections_split_per_ki_and_ticket_even_with_glued_headings():
+    kis = split_package(COLLECTION)
+    assert [p[2]["title"] for p in kis] == ["KI 4694 · Portal do Aluno 2.0 - Impressão de boletim"]
+    assert "etapa fechada" in kis[0][1]  # the KI keeps its "## 2." section
+    faq = split_package(FAQ)
+    assert faq[0][2]["doc_type"] == "Chamado"
+    assert faq[0][2]["title"].startswith("Chamado 2609-1466 (Portal do Professor 2.0): Por que a nota")
+
+
+def test_packaged_faq_with_chamado_markers_is_not_dropped():
+    package = "<!-- AI-READY-PACKAGE v12 -->\n\n## Fonte: Perguntas frequentes — Portal do Professor 2.0\n\n" \
+              + FAQ.replace("## Por que", "#### Por que") + "\n(Fim da fonte: Perguntas frequentes — Portal do Professor 2.0)\n"
+    pages = split_package(package)
+    assert len(pages) == 1 and "recuperação" in pages[0][1]
+
+
+def test_sync_skips_old_copies_indexes_and_markers():
+    from app.drive import SKIP
+
+    assert SKIP.search("/Fontes Originais/Fontes/bkp/gvcollege/FAQ.md") and SKIP.search("/Fontes/GVcollege/_INDICE_GVcollege.md")
+    assert SKIP.search("/Fontes/_AI_READY_SYNC_V14.marker") and not SKIP.search("/Fontes/GVcollege/GVcollege_001.md")

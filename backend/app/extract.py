@@ -94,8 +94,11 @@ def extract_pages(name: str, data: bytes, mime: str = "") -> list[tuple[int, str
 # or tickets ("#### Solicitação do cliente"). Indexing them as one blob makes citations useless ("p53.md"),
 # so every KI / ticket becomes its own section with a readable title.
 _FONTE = re.compile(r"^#{2} Fonte:\s*(.+?)\s*$", re.M)
-_TICKET = re.compile(r"(?:^|-{3})\s*#{2,4} Solicitação do cliente\s*$", re.M)
-_KI = re.compile(r"^#{3} (?!#)(.+?)\s*$", re.M)
+_FIM = re.compile(r"^\(Fim da fonte:.*$", re.M)
+_TICKET = re.compile(r"(?:^|-{3})\s*#{2,4} Solicitação do cliente\s*$", re.M)  # older TOPdesk ticket export
+_FAQ_TICKET = re.compile(r"^\*\*Chamado:\*\*\s*(\S+)", re.M)  # FAQ export: "**Chamado:** 2609-1466" then "## question"
+_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.M)
+_COLLECTION = re.compile(r"^\s*#\s+(Coleção de KIs|Perguntas frequentes)\b", re.I)
 _NOISE = re.compile(
     r"lembrete de retorno|estamos aguardando seu retorno|avali(e|ar) (este|o meu|meu) atendimento|sua opinião (é|nos)"
     r"|alerta \d+h|data alvo do slo|lançar as horas|digitask|podemos encerrar|chamado encerrado|vence em \d+h"
@@ -104,7 +107,8 @@ _PLACEHOLDER = ("Sem conteúdo", "Sem descrição")
 
 
 def is_package(text: str) -> bool:
-    return "AI-READY-PACKAGE" in text[:500] or len(_FONTE.findall(text[:20000])) > 0
+    """AI-READY packages and the standalone TOPdesk collections/FAQs they are built from."""
+    return "AI-READY-PACKAGE" in text[:500] or bool(_FONTE.search(text[:20000])) or bool(_COLLECTION.match(text[:300]))
 
 
 def clean_markup(text: str) -> str:
@@ -119,34 +123,75 @@ def clean_markup(text: str) -> str:
 
 def _source_meta(fonte: str) -> dict[str, str]:
     base = re.sub(r"\s*\(trecho.*$", "", fonte).removesuffix(".md")
-    kind = "Chamado" if base.upper().startswith("FAQ_CHAMADOS") else "KI" if "KIS" in base.upper() else ""
-    product = re.sub(r"^(FAQ_CHAMADOS|COLECAO_KIS_E_MANUAIS|COLECAO_KIS)_*", "", base, flags=re.I).replace("_", " ").strip()
+    up = normalize_upper(base)
+    kind = "Chamado" if up.startswith(("FAQ_CHAMADOS", "PERGUNTAS FREQUENTES")) else \
+        "KI" if "KIS" in up or "COLECAO" in up else ""
+    product = re.sub(r"^(FAQ_CHAMADOS|COLECAO_KIS_E_MANUAIS|COLECAO_KIS)_*|^(Coleção de KIs|Perguntas frequentes)\s*[—–-]\s*",
+                     "", base, flags=re.I).replace("_", " ").strip()
     return {"fonte": base + ".md", "product": product, "doc_type": kind}
 
 
+def normalize_upper(text: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFKD", text.upper()) if not unicodedata.combining(c))
+
+
+def _ticket_items(body: str, product: str) -> list[tuple[str, str]]:
+    if _FAQ_TICKET.search(body):
+        marks = list(_FAQ_TICKET.finditer(body))
+        items = []
+        for i, m in enumerate(marks):
+            part = body[m.start(): marks[i + 1].start() if i + 1 < len(marks) else len(body)]
+            head = _HEADING.search(part)
+            question = head.group(2) if head else clean_markup(part[m.end():]).split("\n")[0]
+            items.append((f"Chamado {m.group(1)} ({product}): {question[:140]}", part))
+        return items
+    items = []
+    for part in _TICKET.split(body)[1:]:
+        request = clean_markup(part.split("Histórico técnico")[0]).lstrip("- ").strip()
+        first = re.sub(r"\s+", " ", re.sub(r"^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}\s*\[[^\]]*\][^:]*:\s*", "", request))
+        first = re.sub(r"^(bom dia|boa tarde|boa noite|olá|prezados)[,!.]?\s*(tudo bem\??)?\s*", "", first, flags=re.I)
+        items.append((f"Chamado TOPdesk ({product}): {first[:90]}", part))
+    return items
+
+
+def _ki_items(body: str) -> list[tuple[str, str]]:
+    """A KI starts at the heading whose own text (before the next heading) carries "Número da KI"; it runs until
+    the next KI. Works for "# T" + "- **Número da KI:**", "## T" + "**Número da KI:**" and the packaged "### T"."""
+    heads = list(_HEADING.finditer(body))
+    starts = []
+    for j, h in enumerate(heads):
+        own = body[h.end(): heads[j + 1].start() if j + 1 < len(heads) else len(body)]
+        if "Número da KI" in own:
+            starts.append(h)
+    return [(h.group(2), body[h.start(): starts[k + 1].start() if k + 1 < len(starts) else len(body)])
+            for k, h in enumerate(starts)]
+
+
 def split_package(text: str) -> list[tuple[int, str, dict[str, str]]]:
-    """[(section_no, text, {title, fonte, product, doc_type})] for each KI or ticket in a package file."""
-    out: list[tuple[int, str, dict[str, str]]] = []
+    """[(section_no, text, {title, fonte, product, doc_type})] for each KI or ticket in a package or collection file."""
+    # The exporter sometimes glues the next title to a separator or tag: "---# Título", "</ul>### Benefícios".
+    text = re.sub(r"(---|</\w+>)(#{1,6} )", r"\1\n\2", text)
     marks = list(_FONTE.finditer(text))
-    for i, m in enumerate(marks):
-        body = text[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(text)]
-        meta = _source_meta(m.group(1))
-        if meta["doc_type"] == "Chamado":
-            parts = _TICKET.split(body)[1:]
-            items = []
-            for part in parts:
-                request = clean_markup(part.split("Histórico técnico")[0]).lstrip("- ").strip()
-                first = re.sub(r"\s+", " ", re.sub(r"^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}\s*\[[^\]]*\][^:]*:\s*", "", request))
-                first = re.sub(r"^(bom dia|boa tarde|boa noite|olá|prezados)[,!.]?\s*(tudo bem\??)?\s*", "", first, flags=re.I)
-                items.append((f"Chamado TOPdesk ({meta['product']}): {first[:90]}", part))
-        else:
-            heads = list(_KI.finditer(body))
-            items = [(h.group(1), body[h.start(): heads[j + 1].start() if j + 1 < len(heads) else len(body)])
-                     for j, h in enumerate(heads)]
+    if marks:
+        sources = [(m.group(1), text[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(text)])
+                   for i, m in enumerate(marks)]
+    else:  # a standalone "# Coleção de KIs — X" / "# Perguntas frequentes — X" file
+        first = _HEADING.search(text)
+        sources = [(first.group(2) if first else "Documento", text)]
+    out: list[tuple[int, str, dict[str, str]]] = []
+    for fonte, body in sources:
+        body = _FIM.split(body)[0]
+        meta = _source_meta(fonte)
+        items = _ticket_items(body, meta["product"]) if meta["doc_type"] == "Chamado" else _ki_items(body)
+        if not items and meta["doc_type"] != "Chamado":
+            items = [(fonte, body)]  # a manual or other document: one section, chunked later
+        whole = items == [(fonte, body)]
         for title, raw in items:
             content = clean_markup(raw)
-            if title.startswith(("Sem título", "Coleção de KIs", "Perguntas frequentes")) or len(content) < 80 \
-                    or all(p in content for p in _PLACEHOLDER):
+            placeholder = title.startswith(("Sem título", "Coleção de KIs", "Perguntas frequentes")) and not whole
+            if placeholder or len(content) < 80 or all(p in content for p in _PLACEHOLDER):
                 continue
             ki = re.search(r"Número da KI:\**\s*(KI\s*\d+)", content)
             if ki and ki.group(1) not in title:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -29,6 +30,9 @@ EXPORTS = {
     "application/vnd.google-apps.presentation": ("text/plain", ".txt"),
 }
 MAX_BYTES = 50 * 1024 * 1024
+# Old copies (bkp), navigation tables and the sync tool's control files are not knowledge.
+SKIP = re.compile(r"/bkp/|/_INDICE_[^/]*$|\.marker$", re.I)
+READER_VERSION = 2  # bump when extract.py reads the same files differently
 FIELDS = "id,name,mimeType,modifiedTime,parents,md5Checksum,size,webViewLink,version"
 
 
@@ -170,7 +174,7 @@ def sync(ctx: JobContext | None = None, *, gateway: GoogleDriveGateway | None = 
         if item["mimeType"] == SHORTCUT_MIME:
             counts["rejected"] += 1  # shortcuts may point outside the authorized folder: never followed
             continue
-        if item["mimeType"].startswith(("image/", "video/", "audio/")):
+        if item["mimeType"].startswith(("image/", "video/", "audio/")) or SKIP.search(f"{path}/{name}"):
             continue
         if classify_source(fid, gateway.parents, gateway.allowed_folder_id) != ACCEPTED_SOURCE:
             counts["rejected"] += 1
@@ -178,7 +182,8 @@ def sync(ctx: JobContext | None = None, *, gateway: GoogleDriveGateway | None = 
                 ctx.log(f"REJECTED_SOURCE {name}")
             continue
         seen.add(fid)
-        signature = (item.get("modifiedTime", ""), item.get("md5Checksum") or item.get("version", ""))
+        # The reader version is part of the signature: a better parser re-reads every file once.
+        signature = (item.get("modifiedTime", ""), f"{item.get('md5Checksum') or item.get('version', '')}|r{READER_VERSION}")
         if fid in known and known[fid] == signature:
             counts["unchanged"] += 1
             continue
